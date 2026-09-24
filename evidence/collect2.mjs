@@ -31,6 +31,52 @@ const KYBER = "https://aggregator-api.kyberswap.com/robinhood/api/v1/routes";
 const KYBER_CLIENT = "partitio-evidence";
 const LIFI_MIN_GAP_MS = 60 * 60 * 1000;   // LI.FI at most hourly, per instruction
 
+// LI.FI's free tier is severely rate-limited: /quote returned
+// {"message":"Rate limit exceeded, retry in 21 minutes","code":1005} under light use, while
+// /advanced/routes still answered. So we use /advanced/routes, at most once an hour, and log the
+// refusals as data rather than retrying into the limit.
+async function lifi(tokenIn, tokenOut, amountIn) {
+  try {
+    const r = await fetch("https://li.quest/v1/advanced/routes", {
+      method: "POST", headers: { "content-type": "application/json" },
+      body: JSON.stringify({ fromChainId: 4663, toChainId: 4663, fromTokenAddress: tokenIn,
+                             toTokenAddress: tokenOut, fromAmount: amountIn }),
+      signal: AbortSignal.timeout(25000),
+    });
+    const j = await r.json().catch(() => null);
+    if (r.status === 429 || j?.code === 1005)
+      return { out: null, status: "unmeasured", cls: "rate-limited", http: r.status, err: j?.message };
+    if (!j?.routes?.length)
+      return { out: null, status: "unmeasured", cls: "no-route", http: r.status, err: j?.message ?? "no routes" };
+    let best = null; const tools = new Set(); let hops = 0;
+    for (const rt of j.routes) {
+      const amt = BigInt(rt.toAmount || 0);
+      if (best === null || amt > best) best = amt;
+      for (const st of rt.steps || []) { hops++; tools.add(st.toolDetails?.name || st.tool || "?"); }
+    }
+    return { out: best, status: "ok", http: r.status, hops, families: [...tools].sort(), rfqShare: null };
+  } catch (e) {
+    return { out: null, status: "unmeasured", cls: "transport", err: String(e.message || e) };
+  }
+}
+
+// 0x requires an API key (401 "No API key found in request" without one). It is wired but
+// inert until ZEROX_API_KEY is set, so the provider table is ready without faking a number.
+const ZEROX_KEY = process.env.ZEROX_API_KEY || null;
+async function zerox(tokenIn, tokenOut, amountIn) {
+  if (!ZEROX_KEY) return { out: null, status: "unmeasured", cls: "no-api-key", err: "ZEROX_API_KEY not set" };
+  try {
+    const u = `https://api.0x.org/swap/permit2/price?chainId=4663&sellToken=${tokenIn}&buyToken=${tokenOut}&sellAmount=${amountIn}`;
+    const r = await fetch(u, { headers: { "0x-api-key": ZEROX_KEY, "0x-version": "v2" }, signal: AbortSignal.timeout(25000) });
+    const j = await r.json().catch(() => null);
+    if (!j?.buyAmount) return { out: null, status: "unmeasured", cls: r.status === 429 ? "rate-limited" : "no-route", http: r.status, err: j?.message ?? `http ${r.status}` };
+    const tools = (j.route?.fills || []).map((f) => f.source);
+    return { out: BigInt(j.buyAmount), status: "ok", http: r.status, hops: tools.length, families: [...new Set(tools)].sort(), rfqShare: null };
+  } catch (e) {
+    return { out: null, status: "unmeasured", cls: "transport", err: String(e.message || e) };
+  }
+}
+
 const SIZES_USD = [1000, 10000, 100000, 500000];
 const K_CHUNKS = 8;               // ladder points per venue; greedy allocates K chunks
 const MAX_AMM_VENUES = 6;         // top by liquidity, to bound calls per run
@@ -242,8 +288,10 @@ const db = new DatabaseSync(DB_PATH);
 db.exec(fs.readFileSync(path.join(HERE, "schema2.sql"), "utf8"));
 const insQuote = db.prepare(`INSERT INTO quote (run_id,ticker,direction,size_usd,amount_in,family,kind,venue_id,chunk_ix,amount_out,status,err)
   VALUES (?,?,?,?,?,?,?,?,?,?,?,?)`);
-const insKyber = db.prepare(`INSERT INTO kyber_call (run_id,at,ticker,direction,size_usd,restricted,status,cls,http,api_code,hops,families,rfq_share,amount_out,err)
-  VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`);
+// provider column added in place so the v2 series keeps one table across Kyber / LI.FI / 0x
+try { db.exec("ALTER TABLE kyber_call ADD COLUMN provider TEXT NOT NULL DEFAULT 'kyber'"); } catch { /* already added */ }
+const insKyber = db.prepare(`INSERT INTO kyber_call (run_id,at,provider,ticker,direction,size_usd,restricted,status,cls,http,api_code,hops,families,rfq_share,amount_out,err)
+  VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`);
 const insAgg = db.prepare(`INSERT OR REPLACE INTO agg (run_id,ticker,direction,size_usd,amount_in,best_venue_out,best_venue_id,best_venue_family,
   best_v3_out,best_v4_out,best_maker_out,split_out,split_kind,split_legs,split_venue_count,
   kyber_all_out,kyber_all_status,kyber_onchain_out,kyber_onchain_status,lifi_out,lifi_status)
@@ -251,8 +299,8 @@ const insAgg = db.prepare(`INSERT OR REPLACE INTO agg (run_id,ticker,direction,s
 
 let lastLifi = 0;
 
-function recordKyber(runId, ticker, direction, sizeUsd, restricted, k) {
-  insKyber.run(runId, new Date().toISOString(), ticker, direction, sizeUsd, restricted,
+function recordKyber(runId, ticker, direction, sizeUsd, restricted, k, provider = "kyber") {
+  insKyber.run(runId, new Date().toISOString(), provider, ticker, direction, sizeUsd, restricted,
     k.status ?? "unmeasured", k.cls ?? null, k.http ?? null, k.code ?? null,
     k.hops ?? null, k.families ? k.families.join("|") : null,
     k.rfqShare ?? null, k.out?.toString() ?? null, k.err ?? null);
@@ -341,6 +389,16 @@ async function runOnce() {
           kOn = await kyber(tokenIn, tokenOut, amountIn.toString(), ONCHAIN_FAMILIES);
           recordKyber(runId, ticker, direction, sizeUsd, 1, kOn);
           await sleep(KYBER_PACE_MS);
+        }
+
+        // LI.FI at most hourly across the whole grid; 0x whenever a key exists, same cadence.
+        if (Date.now() - lastLifi > LIFI_MIN_GAP_MS) {
+          lastLifi = Date.now();
+          const lf = await lifi(tokenIn, tokenOut, amountIn.toString());
+          recordKyber(runId, ticker, direction, sizeUsd, 0, lf, "lifi");
+          const zx = await zerox(tokenIn, tokenOut, amountIn.toString());
+          recordKyber(runId, ticker, direction, sizeUsd, 0, zx, "0x");
+          log(`    lifi ${lf.out ?? lf.cls} · 0x ${zx.out ?? zx.cls}`);
         }
 
         const kstr = (k) => k.status + (k.families ? ` hops=${k.hops} rfq=${k.rfqShare}% [${k.families.join("|")}]`
