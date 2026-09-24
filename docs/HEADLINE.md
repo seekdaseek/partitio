@@ -7,7 +7,9 @@ filled with a plausible number, and this file is the only place the headline is 
 
 > Morpho lenders on Robinhood Chain can't take stock collateral at size: a $500k AAPL liquidation
 > through the best pool loses **[EXIT_SINGLE]%**, over [MULTIPLE] times its **[BREAKEVEN]%** margin.
-> partitio clears it on-chain at **[EXIT_PARTITIO]%** in one call, split by a Stylus optimizer.
+> partitio clears it at **[EXIT_PARTITIO]%** in one call: the split is computed off-chain by
+> partitio's quoter and enforced on-chain by immutable venue proofs, the signer's minOut and a
+> Chainlink-referenced floor.
 > **[N]** paired quotes over **[D]** days; **[$X]** of stock collateral made atomically liquidatable.
 
 ## Brackets and where each one comes from
@@ -32,6 +34,12 @@ filled with a plausible number, and this file is the only place the headline is 
 3. **Every uncertainty is biased against partitio.** Where the aggregator baseline is ambiguous,
    take its best observation, not its worst.
 4. **If a number is not in the engine's database, it does not go in the line.**
+5. **No claim that the split is computed on-chain.** It is not, and saying so would be the one
+   unmeasured thing in a file whose whole purpose is that every claim is measured. `GreedySplit.sol`
+   and the Stylus `PartitioMath` module are benchmarked (`docs/STYLUS.md`), not in the production
+   path: `PartitioRouterV2` executes a split handed to it in `legs`. What is on-chain is the
+   *enforcement* — Merkle venue proofs, `minOut`, and the oracle floor — which is the part that has
+   to be trustless. If `swapOnchain` ships, this rule gets rewritten against what it actually does.
 
 ## Kill criterion
 

@@ -2,6 +2,13 @@
 
 Deployed and activated on Robinhood Chain mainnet (4663).
 
+> **Status: benchmarked, not in the production path.** Nothing in `src/` calls `PartitioMath`, and
+> `PartitioRouterV2` does not compute a split at all — it executes the one handed to it in `legs`,
+> which partitio's quoter computes off-chain. The numbers below are a real measurement of one
+> algorithm against itself across two runtimes; they are not a claim about what a partitio swap
+> currently executes. Do not let this table be read as "the split runs in Stylus in the same
+> transaction". It does not.
+
 | | |
 |---|---|
 | address | `0x2daccb7b03e8479ff52773682f3d1c9b295ceb41` |
