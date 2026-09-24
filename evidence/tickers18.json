@@ -1,0 +1,24 @@
+{
+ "rule": "top 18 by count of verified routable venues in registry.json",
+ "pickedAt": "2026-09-24T12:03:05.342Z",
+ "tickers": [
+  "NVDA",
+  "AAPL",
+  "GME",
+  "MSTR",
+  "TSLA",
+  "SPCX",
+  "GOOGL",
+  "GLD",
+  "META",
+  "SPY",
+  "RDDT",
+  "CRCL",
+  "DELL",
+  "COIN",
+  "INTC",
+  "TSM",
+  "QQQ",
+  "SGOV"
+ ]
+}
