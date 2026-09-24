@@ -64,12 +64,9 @@ contract G5Fork is Test, IUniswapV3SwapCallback {
         assertGt(out, 300e6, "implausibly low for 1 AAPL");
     }
 
-    /// @notice The split premise in one assertion: two venues, different prices, at the same block.
-    function test_G5_twoVenuesQuoteDifferently() public {
-        uint256 a = _sell(POOL_UNI, 1e18);
-        uint256 b = _sell(POOL_UPV3, 1e18);
-        console2.log("canonical", a);
-        console2.log("up-v3    ", b);
-        assertTrue(a != b, "venues priced identically - split would be pointless");
-    }
+    // REMOVED: test_G5_twoVenuesQuoteDifferently asserted that two venues quote differently at
+    // 1 AAPL. It proved nothing (two independent pools are almost never bit-identical) and it
+    // would flake the moment they happened to agree. The real claim is invariant I8 — that a
+    // SPLIT beats the best SINGLE venue at size — and it is tested in test/InvariantI8.t.sol
+    // against executed output, not quotes.
 }

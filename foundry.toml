@@ -8,6 +8,12 @@ optimizer_runs = 1000
 via_ir = false
 evm_version = "cancun"
 
+# Fork tests are pinned. The canonical RPC is NOT an archive node: it serves state for roughly
+# the last 5,000-20,000 blocks only (measured 2026-09-24 - head-5000 OK, head-20000 refused).
+# A pinned block therefore ages out of the RPC within about 90 minutes, and what keeps these
+# tests reproducible afterwards is Foundry's local fork cache under ~/.foundry/cache. A fresh
+# clone must either re-pin to a recent block or point at an archive RPC. Stated because a
+# "pinned" test that silently needs a warm cache is a trap for whoever runs this next.
 [rpc_endpoints]
 robinhood = "https://rpc.mainnet.chain.robinhood.com"
 
