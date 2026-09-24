@@ -173,7 +173,7 @@ contract R11_Signature is ReviewBase {
             guard: OracleGuard.Params({feed: AAPL_FEED, stockIsInput: true, maxDevBps: 500})
         });
         o = GaslessEntry.Order({
-            owner: user, tokenIn: AAPL, amountIn: amountIn, maxFee: 1e15,
+            owner: user, tokenIn: AAPL, amountIn: amountIn, maxFee: 1e6,   // USDG, not AAPL
             deadline: block.timestamp + 600, salt: salt, outputs: outs
         });
     }
@@ -199,7 +199,7 @@ contract R11_Signature is ReviewBase {
         GaslessEntry.Route memory r =
             GaslessEntry.Route({aggregator: address(0), callData: "", aggMinOut: 0, legs: _legs1(0, 1e18 - 1e15)});
         vm.prank(relayer);
-        uint256[] memory outs = entry.fill(o, _sellAuth(o, n), r, 1e15);
+        uint256[] memory outs = entry.fill(o, _sellAuth(o, n), r, 1e6);
         assertGt(outs[0], 0, "sell should fill");
     }
 
@@ -220,16 +220,16 @@ contract R11_Signature is ReviewBase {
         // the relayer fills B first - a free choice, nothing in either order forbids it
         vm.prank(relayer);
         vm.expectRevert(); // ERC20InsufficientAllowance after the swallowed permit failure
-        entry.fill(oB, aB, r, 1e15);
+        entry.fill(oB, aB, r, 1e6);
 
         // and A still works, which pins the cause on ordering rather than on order B being invalid
         vm.prank(relayer);
-        uint256[] memory outs = entry.fill(oA, aA, r, 1e15);
+        uint256[] memory outs = entry.fill(oA, aA, r, 1e6);
         assertGt(outs[0], 0, "order A fills once it is first");
 
         // now B fills too, because its nonce finally came up
         vm.prank(relayer);
-        uint256[] memory outsB = entry.fill(oB, aB, r, 1e15);
+        uint256[] memory outsB = entry.fill(oB, aB, r, 1e6);
         assertGt(outsB[0], 0, "B fills second");
     }
 }
