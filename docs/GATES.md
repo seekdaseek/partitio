@@ -29,8 +29,12 @@ selector is `stylusVersion()`.
 **Still required before G1 passes:** `cargo stylus check`, then deploy + activate on mainnet with the
 throwaway key, and record the activation cost. Until that runs, the Stylus module stays a stretch goal.
 
-**Blocked on:** a funded throwaway deployer. The key itself is created on the Mac and never echoed;
-funding it with dust ETH is Sergiu's action. Nothing else in P0 depends on it.
+**Funded and partly executed.** `cargo stylus check` passes against 4663: contract 6.0 KB (5 974
+bytes), wasm data fee **0.000071 ETH** measured. The router and caller are deployed on mainnet and
+three live swaps have settled — see `docs/DEPLOYMENTS.md`. The Stylus deploy itself is still
+**UNTESTED**: `cargo stylus deploy --estimate-gas` returns 71,234,753,629,543 gas and a cost of
+2955 ETH, which is a broken estimator rather than a price, so the deploy is attempted last with
+0.000969 ETH remaining.
 
 ---
 
