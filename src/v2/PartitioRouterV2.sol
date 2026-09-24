@@ -6,14 +6,9 @@ import {GreedySplit} from "../lib/GreedySplit.sol";
 import {IUniswapV3Pool, IUniswapV3SwapCallback} from "../interfaces/IUniswapV3Pool.sol";
 import {IPropPair} from "../interfaces/IPropPair.sol";
 import {IPoolManager, IUnlockCallback, PoolKey, SwapParams, Currency, BalanceDeltaLib} from "../interfaces/IPoolManager.sol";
-
-interface IERC20 {
-    function balanceOf(address) external view returns (uint256);
-    function decimals() external view returns (uint8);
-    function transfer(address, uint256) external returns (bool);
-    function transferFrom(address, address, uint256) external returns (bool);
-    function approve(address, uint256) external returns (bool);
-}
+import {SafeERC20} from "@openzeppelin/contracts/token/ERC20/utils/SafeERC20.sol";
+import {IERC20} from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
+import {IERC20Metadata} from "@openzeppelin/contracts/token/ERC20/extensions/IERC20Metadata.sol";
 
 /// @title PartitioRouterV2
 /// @notice Splits an order across Robinhood Chain's on-chain venues, in either direction, and
@@ -37,6 +32,7 @@ interface IERC20 {
 /// and the oracle floor is enforced across the whole route regardless.
 contract PartitioRouterV2 is IUniswapV3SwapCallback, IUnlockCallback {
     using BalanceDeltaLib for int256;
+    using SafeERC20 for IERC20;
 
     enum Kind { V3, V4, MAKER }
 
@@ -142,7 +138,7 @@ contract PartitioRouterV2 is IUniswapV3SwapCallback, IUnlockCallback {
         }
         if (total == 0) revert NothingRouted();
 
-        IERC20(tokenIn).transferFrom(msg.sender, address(this), total);
+        IERC20(tokenIn).safeTransferFrom(msg.sender, address(this), total);
         uint256 before = IERC20(tokenOut).balanceOf(address(this));
 
         uint256 filled;
@@ -163,11 +159,11 @@ contract PartitioRouterV2 is IUniswapV3SwapCallback, IUnlockCallback {
         if (amountOut < minOut) revert InsufficientOutput(amountOut, minOut);
 
         (uint256 floorOut, uint256 updatedAt) = OracleGuard.enforce(
-            guard, total - unfilled, amountOut, IERC20(tokenIn).decimals(), IERC20(tokenOut).decimals()
+            guard, total - unfilled, amountOut, IERC20Metadata(tokenIn).decimals(), IERC20Metadata(tokenOut).decimals()
         );
 
-        IERC20(tokenOut).transfer(recipient, amountOut);
-        if (unfilled != 0) IERC20(tokenIn).transfer(msg.sender, unfilled);
+        IERC20(tokenOut).safeTransfer(recipient, amountOut);
+        if (unfilled != 0) IERC20(tokenIn).safeTransfer(msg.sender, unfilled);
 
         emit Routed(tokenIn, tokenOut, recipient, total - unfilled, amountOut, filled, floorOut, updatedAt);
     }
@@ -200,12 +196,12 @@ contract PartitioRouterV2 is IUniswapV3SwapCallback, IUnlockCallback {
         // MAKER
         if (tokenIn != v.token0 && tokenIn != v.token1) revert TokenNotInVenue();
         bool zfo = (v.token0 == tokenIn);
-        IERC20(tokenIn).approve(v.target, amountIn);
+        IERC20(tokenIn).forceApprove(v.target, amountIn);
         try IPropPair(v.target).swapExactIn(zfo, amountIn, 0, address(this), block.timestamp) returns (uint256 o) {
-            IERC20(tokenIn).approve(v.target, 0);
+            IERC20(tokenIn).forceApprove(v.target, 0);
             return o != 0;
         } catch {
-            IERC20(tokenIn).approve(v.target, 0);
+            IERC20(tokenIn).forceApprove(v.target, 0);
             return false;
         }
     }
@@ -218,8 +214,8 @@ contract PartitioRouterV2 is IUniswapV3SwapCallback, IUnlockCallback {
         assembly { expected := tload(s) }
         address pool = abi.decode(data, (address));
         if (msg.sender != expected || pool != expected) revert BadCallback();
-        if (amount0Delta > 0) IERC20(IUniswapV3Pool(pool).token0()).transfer(pool, uint256(amount0Delta));
-        if (amount1Delta > 0) IERC20(IUniswapV3Pool(pool).token1()).transfer(pool, uint256(amount1Delta));
+        if (amount0Delta > 0) IERC20(IUniswapV3Pool(pool).token0()).safeTransfer(pool, uint256(amount0Delta));
+        if (amount1Delta > 0) IERC20(IUniswapV3Pool(pool).token1()).safeTransfer(pool, uint256(amount1Delta));
     }
 
     function unlockCallback(bytes calldata data) external override returns (bytes memory) {
@@ -238,7 +234,7 @@ contract PartitioRouterV2 is IUniswapV3SwapCallback, IUnlockCallback {
         address tOut = zeroForOne ? Currency.unwrap(key.currency1) : Currency.unwrap(key.currency0);
 
         poolManager.sync(Currency.wrap(tIn));
-        IERC20(tIn).transfer(address(poolManager), uint256(uint128(-owed)));
+        IERC20(tIn).safeTransfer(address(poolManager), uint256(uint128(-owed)));
         poolManager.settle();
         poolManager.take(Currency.wrap(tOut), address(this), uint256(uint128(gained)));
         return abi.encode(uint256(uint128(gained)));
