@@ -62,7 +62,14 @@ async function lifi(tokenIn, tokenOut, amountIn) {
 
 // 0x requires an API key (401 "No API key found in request" without one). It is wired but
 // inert until ZEROX_API_KEY is set, so the provider table is ready without faking a number.
-const ZEROX_KEY = process.env.ZEROX_API_KEY || null;
+// Picked up automatically if the key file appears; read from disk, never printed, never logged.
+const ZEROX_KEY = (() => {
+  if (process.env.ZEROX_API_KEY) return process.env.ZEROX_API_KEY;
+  for (const f of [path.join(HERE, "zerox_key"), `${process.env.HOME}/.config/partitio/zerox_key`]) {
+    try { const k = fs.readFileSync(f, "utf8").trim(); if (k) return k; } catch { /* absent */ }
+  }
+  return null;
+})();
 async function zerox(tokenIn, tokenOut, amountIn) {
   if (!ZEROX_KEY) return { out: null, status: "unmeasured", cls: "no-api-key", err: "ZEROX_API_KEY not set" };
   try {
