@@ -1,0 +1,19 @@
+# secrets — never commit
+.env
+.env.*
+*.key
+*.pem
+
+# foundry
+cache/
+out/
+broadcast/
+!broadcast/*/*/run-latest.json
+
+# node
+node_modules/
+package-lock.json
+
+# local recon artifacts
+docs/*.raw.json
+.DS_Store
