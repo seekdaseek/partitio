@@ -362,15 +362,93 @@ move its own position, and it is the threshold G2 measures against.
 
 ## G2 — The problem, measured
 
-**Status: IN PROGRESS.** Scope constraint found and recorded: USDG exceeds the RPC's 10,000-result
-log cap inside 10,000 blocks, and the chain is 71.4M blocks deep, so a full-history holder set is
-not reachable through this RPC. The chain's Blockscout explorer
-(`robinhoodchain.blockscout.com`) sits behind a Cloudflare challenge which was **not** circumvented.
+**Status: population measured; the dollar total is still computing.**
 
-The scan is therefore a bounded recent window, and the result is a **lower bound**. The bias is
-conservative: wallets that transferred recently are more likely to hold ETH than dormant ones, so
-the true zero-ETH population is at least as large as what this reports.
+### Scope, stated before the numbers
+
+Chain block time is **0.1008 s** (measured over 200,000 blocks), so the chain is 83 days old and
+**the 1,000,000-block scan window is 1.17 days, not a week.** That is the honest span of this
+measurement.
+
+Constraints that forced it:
+- USDG exceeds the canonical RPC's 10,000-result log cap inside 10,000 blocks, and a full-history
+  holder set across 71.4M blocks is not reachable through it.
+- The chain's Blockscout explorer (`robinhoodchain.blockscout.com`) sits behind a Cloudflare
+  challenge from both the Mac and the VPS. It was **not** circumvented.
+- 40 of 370 log pages failed to rate limits and their addresses are simply missing.
+
+Every one of those pushes the count **down**, and recently-active wallets are *more* likely to hold
+ETH than dormant ones. So this is a floor, not an estimate.
+
+### What the scan found
+
+580,000 Transfer logs across 37 stock tokens over 1.17 days → **32,035 unique addresses**.
+
+Gas threshold is one approve + one swap at the live 0.0421 gwei: **0.00001137 ETH**. This is
+deliberately not a story about expensive gas — gas here is nearly free. It is a story about wallets
+holding *nothing* to pay it with, on a chain where the only gas asset is ETH.
+
+| | count | share |
+|---|---|---|
+| addresses seen | 32,035 | |
+| **ETH exactly zero** | **12,939** | **40.4%** |
+| dust, but below one swap | 1,786 | 5.6% |
+| **cannot pay for approve + swap** | **14,725** | **46.0%** |
+| can pay | 17,310 | 54.0% |
+
+ETH percentiles across the set: p50 **0.000113**, p75 0.008075, p90 0.133677. So the median wallet
+can afford roughly ten swaps — this is not a chain where everyone is broke. It is a chain where
+**two in five addresses that touched a stock token hold literally zero gas.**
+
+### How many people actually trade
+
+v3 `Swap` events over the same 1.17-day window:
+
+| pool | swaps |
+|---|---|
+| NVDA/USDG fee 500 | 22,321 |
+| AAPL/USDG fee 500 | 3,329 |
+| up-v3 AAPL/USDG | 1,192 |
+| AAPL/USDG fee 3000 | 177 |
+
+**27,019 swaps, 215 unique senders** (routers and aggregators, not end users) and **630 unique
+recipients**, which is the closer proxy for distinct traders.
+
+Two defects in that probe, recorded rather than hidden: the SPY row used the SPY *token* address
+where a pool address belongs and so returned 0, and WETH/USDG lost all five of its pages to rate
+limits. Both are omissions, so 630 is also a floor.
+
+### Still computing
+
+Total USD held by the 14,725 sub-threshold wallets, priced across 25 of 37 tokens (12 have no v3
+500/3000 pool and contribute $0, which undercounts again). 382,850 balance reads are in flight
+through `UniswapInterfaceMulticall`.
+
+### Method note worth keeping
+
+The first version of this sweep priced all 32,035 addresses across all 38 assets — 833k reads, ~4
+hours. Filtering to sub-threshold wallets *first* cuts it to 383k, because a wallet with gas is not
+stuck no matter what it holds. The ETH balances are written to `holders-eth.json` before the
+expensive phase so the population numbers survive a failure of the pricing phase.
 
 ## G3 — Engine v2
 
-**Status: NOT STARTED.**
+**Status: LIVE on the VPS as PM2 `partitio-evidence`, 0 restarts.**
+
+- **Both directions.** Buying (USDG → stock) is the product's main path and is now measured, not
+  inferred from the sell side. 18 tickers × 4 sizes × 2 directions = 144 cells per run.
+- **Every Kyber response is classified and stored** in a `kyber_call` table: http status, api code,
+  classification (overloaded / rate-limited / no-route / transport / error), hop count, family list
+  and RFQ share. Availability stops being anecdote.
+- **First availability reading: 14 ok against 29 overloaded — a 32.6% success rate** at our request
+  rate, which sits close to the 3-of-5 failure rate seen by hand.
+- Fresh `partitio-v2.db`. The v1 series (5 runs, 22,272 quotes) is preserved and the break is
+  written into v1's own `run` table, not just into a commit message.
+
+**A bug caught before it shipped:** the first `rfq_share` summed `amountOut` across *all* hops.
+Kyber's route is `route[parallelSplit][sequentialHop]`, so that double-counts sequential legs and
+dilutes the share toward zero — it was reporting 0.0% on routes that visibly contained `pmm-19`.
+It now takes each parallel split's **first** hop `swapAmount` as a share of input.
+
+Still outstanding in v2: complete Rialto pair coverage, two-hop paths through SPY/WETH, and the
+MAX_AMM_VENUES / K_CHUNKS sensitivity sweep.
