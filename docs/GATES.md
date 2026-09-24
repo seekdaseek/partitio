@@ -56,9 +56,11 @@ Morpho Blue is independently confirmed for Robinhood Chain on `docs.morpho.org`,
 AdaptiveCurveIRM `0x2BD3d5965B26B51814AC95127B2b80dD6CcC0fa1` and ChainlinkOracleV2Factory
 `0xB7c16F6F8cF531447Bf27Ca7220f981E79C9cdF2` (both **UNTESTED**).
 
-**Correction to the brief's section 4:** the address listed there as the quoter,
-`0x8dc178efb8111bb0973dd9d722ebeff267c98f94`, is the **V4Quoter**. The v3 QuoterV2 is a different
-contract, `0x33e885ed0ec9bf04ecfb19341582aadcb4c8a9e7`.
+**Provenance note.** The brief listed no quoter address. `0x8dc178efb8111bb0973dd9d722ebeff267c98f94`
+came from the `quoter` field of `/opt/bid-sampler/bid-markets.json` (August pre-event research, read as
+reference only). That address is the **V4Quoter**, not the v3 QuoterV2 — a field name worth not
+trusting. The v3 QuoterV2 is `0x33e885ed0ec9bf04ecfb19341582aadcb4c8a9e7`, taken from the official
+Uniswap deployments file and proven live here.
 
 ---
 
@@ -82,19 +84,34 @@ Registry `0x71a120CbBf3Ce7cD910a3c50fF77aFc62735687E` (9 939 code chars),
 Router `0xc94135b63772b91d79d0a2daab2a8801f32359bd` (48 467).
 11 propAMM pairs located and probed — see `docs/VENUES.md`.
 
-### Finding: propAMM settlement is NOT router-gated
+### Finding: propAMM settlement is not router-gated — PROVEN BY SETTLEMENT
 
-The docs describe `swapExactIn` as "callable by RialtoRouter only". Measured on the AAPL pair
-`0x89e211d43bbcf8ca5eaa9e5fbdef078cf520ecf1`, that is **not enforced on-chain**:
+**The earlier evidence for this was not proof and has been replaced.** Identical
+`ERC20InsufficientAllowance` reverts from an EOA and from the RialtoRouter only show there is no gate
+*before* the token pull; a check placed *after* the pull would look exactly the same. Inference from
+matching reverts was the wrong standard.
 
-| caller (`eth_call --from`) | revert |
-|---|---|
-| random EOA `0x1111…1111` | `ERC20InsufficientAllowance(pair, 0, 1e18)` |
-| RialtoRouter `0xc941…59bd` | `ERC20InsufficientAllowance(pair, 0, 1e18)` |
+`test/PropAmmDirect.t.sol` settles real swaps on a pinned fork (block 71350874), called from a test
+contract with no RialtoRouter anywhere in the call stack:
 
-Both callers reach the token pull and fail there, identically. There is no `msg.sender`
-discrimination. **Partitio can call propAMMs directly as a venue**, without routing through
-RialtoRouter and without an off-chain quote.
+| maker | pair | quoted | received |
+|---|---|---|---|
+| fermi-prop AAPL | `0x89E211D4…ecF1` | 336.893742 | **336.893742** |
+| fermi-prop TSLA | `0x6AF2ceE7…304b` | 376.152349 | **376.152349** |
+| fermi-prop NVDA | `0x5744E9C5…f16F` | 222.950106 | **222.950106** |
+| fermi-prop SPY  | `0x894b9322…cC73` | 764.501318 | **764.501318** |
+
+Every fill equals its quote to the wei, and the returned value equals the balance delta. Partitio can
+settle maker legs directly.
+
+**This does not make maker legs safe to depend on.** Rialto's published spec says router-only, so the
+absence of a check is a property of the currently deployed code, not a guarantee. Every maker leg is
+therefore **best-effort**: if a leg reverts or fills short of its quote, the router sends that amount
+to the best AMM venue **within the same call**, and total `minOut` is still enforced across the whole
+route. A maker can degrade a route's price; it can never brick it. This is stated in the README.
+
+`metric-propamm` (`0x8570D319…9625`, 40 051 code chars) does **not** answer `token0()` — a different
+interface. It is **UNTESTED** and stays out of the registry until it has its own settlement proof.
 
 Caveat: this is one pair at one block. It must be re-checked per pair before that pair is registered
 as a venue, and it is a property of the current deployed code, not a guarantee. The venue adapter
@@ -140,9 +157,9 @@ Two method notes, both the result of catching my own errors:
    initialised-but-idle pool. Re-run with `slot0.sqrtPriceX96 != 0`, the v4 count went from 30 to 73
    (e.g. META 1→4, NVDA 3→4). The `active` flag still records which have in-range liquidity now.
 
-**Known gap:** hook pools are not enumerable — poolId needs the hook address as an input and both
-public 4663 RPCs refuse `eth_getLogs`. They must be registered by address. Stated plainly rather than
-claimed as zero.
+**Superseded — see G7.** This sweep's hookless derivation is *not* the discovery mechanism. The
+canonical RPC does serve `eth_getLogs`, so every pool including hook pools is enumerable from
+events. The derivation sweep is retained only as an independent cross-check of the event data.
 
 ---
 
@@ -201,6 +218,23 @@ Discovered while running G6, not by looking for it: the Kyber route for a $374k 
 | `pmm-19` | *synthetic* `pmm_19_<tokenA>_<tokenB>` | n/a | **no — off-chain RFQ** |
 | `kipseli-prop` | *synthetic* `kipseli-prop_<tokenA>_<tokenB>` | n/a | **no — off-chain RFQ** |
 
+### The brief's "on-chain AMMs only" baseline is void
+
+The brief's section 1 table has a column headed *"on-chain AMMs only (v3 + v4 + v4-fables +
+kipseli-prop)"*, reading AAPL −0.95%, NVDA −0.75%, TSLA −2.12%, SPY −0.19%. **`kipseli-prop` is
+addressed by a synthetic identifier, not a contract** — it is an off-chain RFQ source. Those four
+numbers measure a source set no on-chain router can reach, and are discarded. They must not appear in
+the README, the deck or the submission.
+
+**Standing rule from here: no bytecode at the address, no venue.** A venue enters the registry only
+after `eth_getCode` returns non-empty and its own accessors (`token0`/`token1`, plus `fee`/`tickSpacing`
+or `getAmountOut`) answer. Synthetic identifiers are recorded as evidence of the off-chain gap, never
+as routing targets.
+
+**The two yardsticks are therefore:** (a) Kyber all-sources, and (b) Kyber restricted to venue families
+proven to be contracts. (b) minus partitio is routing quality; (a) minus (b) is the off-chain maker
+premium — a real limitation to state, not to hide.
+
 Two consequences, both important:
 
 1. **The product boundary is now measurable, not asserted.** `pmm-19` and `kipseli-prop` are addressed
@@ -209,10 +243,11 @@ Two consequences, both important:
    on-chain-reachable subset"*, and the gap to Kyber all-sources is the value of the off-chain makers.
    That gap is a number the evidence engine can measure, per ticker, per size.
 
-2. **Kyber is a venue-discovery source, not a runtime dependency.** Hook poolIds cannot be enumerated
-   (poolId derivation needs the hook address as an input, and both public RPCs refuse `eth_getLogs`).
-   Kyber hands them over directly. Harvesting them once at registry-build time keeps execution
-   entirely on-chain.
+2. **Kyber is a one-time discovery source for propAMM families only, never a runtime dependency.**
+   I first recorded that hook poolIds needed Kyber because both RPCs refused `eth_getLogs`. That was
+   wrong — see G7. Only `publicnode` refuses; the canonical RPC serves logs with no block-range limit.
+   Uniswap v3 and v4 are therefore discovered from events, and Kyber is needed only for propAMM
+   families (`fermi-prop`, `metric-propamm`) that expose no factory we can enumerate.
 
 ### `up-v3` is a standard v3 fork behind minimal proxies
 
