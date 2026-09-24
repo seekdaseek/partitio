@@ -636,3 +636,39 @@ Headline metrics, per provider, at a disclosed request rate:
 1. fill rate — aggregator answered *and* the route was executable, vs partitio;
 2. when both answer, the gap in bps, stated honestly;
 3. when the aggregator does not answer, partitio vs the best single pool, medians $1k–$500k.
+
+
+---
+
+# AGGREGATOR COVERAGE — 0x will not quote tokenized stocks on 4663
+
+Tested 2026-09-24 with a live API key against `swap/allowance-holder/price`, `0x-version: v2`:
+
+| pair | HTTP | result |
+|---|---|---|
+| USDG → WETH | 200 | price returned (`371616860066622`) |
+| WETH → USDG | 200 | price returned (`2684020`) |
+| USDG → AAPL | **422** | `BUY_TOKEN_NOT_AUTHORIZED_FOR_TRADE` — "not authorized for trade due to legal restrictions" |
+| AAPL → USDG | **422** | `SELL_TOKEN_NOT_AUTHORIZED_FOR_TRADE` — same |
+| USDG → SPY | **422** | `BUY_TOKEN_NOT_AUTHORIZED_FOR_TRADE` — same |
+
+**0x supports chain 4663. It refuses the tokenized stocks, in both directions, on legal grounds.**
+It quotes the one pair on this chain that is not a stock.
+
+This is not a rate limit, an outage, or a missing integration — it is a policy that will not change
+because we waited. So 0x is not a usable quote source for a product whose entire subject is
+tokenized equities, and the key stays **unused**: it is not copied to the VPS, because spreading a
+secret to a second machine to record the same 422 forever buys nothing. It will be re-verified once
+before submission in case the policy changes.
+
+The 0.15% Standard-plan swap fee is moot for the same reason. The NET-comparison rule still stands
+for Kyber and LI.FI, and for 0x if it ever opens up.
+
+**Consequence for the headline.** This strengthens the fragmentation argument rather than weakening
+it. Of the three aggregator APIs, one (Kyber) answers roughly 45% of the time at our request rate,
+one (LI.FI) is severely rate-limited on its free tier, and one (0x) **structurally will not serve
+this asset class at all**. That is the measured state of "the APIs that combine this liquidity",
+and it is exactly the gap an on-chain router fills.
+
+Availability instrumentation therefore runs on **Kyber + LI.FI**, as planned, with 0x recorded as a
+categorical refusal rather than an availability percentage.
