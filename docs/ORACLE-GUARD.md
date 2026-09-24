@@ -55,9 +55,16 @@ So the guard **never rejects on age**. It does three things instead:
 3. **Label the reference**: show "last update HH:MM" next to the guarded price. Never silently
    block trading on a 24/7 chain because a stock feed has not ticked.
 
-Checks that *do* hard-block, per Robinhood's documented practice: `answer > 0`, `updatedAt > 0`,
-and `paused()` on the token (with a clear message). No sequencer-uptime feed was found on 4663;
-if one appears it is added here.
+Checks that *do* hard-block: `answer > 0`, `updatedAt > 0`, `paused()` on the token, and one
+**dead-feed ceiling**.
+
+**Dead-feed ceiling = 120 hours.** The measured maximum age across all 48,512 samples and 32 feeds
+is **87.4h**, which already spans holiday weekends. A ceiling above that catches a feed that has
+genuinely stopped without ever rejecting a normal quiet period. It is not a staleness policy — it
+is an upper bound on "is this feed alive at all". Tested with a mocked feed: 87.4h accepted, 119h
+accepted, **121h rejected** as `FeedDead`.
+
+No sequencer-uptime feed was found on 4663; if one appears it is added here.
 
 ## 4. Assets hidden in v1
 

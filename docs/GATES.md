@@ -640,7 +640,7 @@ Headline metrics, per provider, at a disclosed request rate:
 
 ---
 
-# AGGREGATOR COVERAGE — 0x will not quote tokenized stocks on 4663
+# AGGREGATOR COVERAGE — what 0x's API returned for stock tokens on 4663
 
 Tested 2026-09-24 with a live API key against `swap/allowance-holder/price`, `0x-version: v2`:
 
@@ -652,23 +652,29 @@ Tested 2026-09-24 with a live API key against `swap/allowance-holder/price`, `0x
 | AAPL → USDG | **422** | `SELL_TOKEN_NOT_AUTHORIZED_FOR_TRADE` — same |
 | USDG → SPY | **422** | `BUY_TOKEN_NOT_AUTHORIZED_FOR_TRADE` — same |
 
-**0x supports chain 4663. It refuses the tokenized stocks, in both directions, on legal grounds.**
-It quotes the one pair on this chain that is not a stock.
+**Observed, stated exactly as observed:** 0x's API returned
+`BUY_TOKEN_NOT_AUTHORIZED_FOR_TRADE` / `SELL_TOKEN_NOT_AUTHORIZED_FOR_TRADE` ("not authorized for
+trade due to legal restrictions") for AAPL and SPY on chain 4663, on a Standard key, **from a
+Moldova IP and from an EU IP (Hetzner, DE)**. The same key on the same chain returned prices for
+USDG↔WETH from both locations.
 
-This is not a rate limit, an outage, or a missing integration — it is a policy that will not change
-because we waited. So 0x is not a usable quote source for a product whose entire subject is
-tokenized equities, and the key stays **unused**: it is not copied to the VPS, because spreading a
-secret to a second machine to record the same 422 forever buys nothing. It will be re-verified once
-before submission in case the policy changes.
+**It is not geographic** — two countries, same refusal, with a working non-stock control from each.
+Beyond that we do not know the rule 0x applies, and we do not claim to: the honest statement is
+what the API returned, for these tokens, on these dates, from these locations. It is re-checked
+once before submission.
+
+The key stays **unused and on the Mac only**. It was passed to the VPS request over stdin as a
+header file and never written there; a full-key search across `/opt /root /tmp /etc` returns 0
+files, with a known-positive control on the Mac finding exactly 1 (the key file itself).
 
 The 0.15% Standard-plan swap fee is moot for the same reason. The NET-comparison rule still stands
 for Kyber and LI.FI, and for 0x if it ever opens up.
 
-**Consequence for the headline.** This strengthens the fragmentation argument rather than weakening
-it. Of the three aggregator APIs, one (Kyber) answers roughly 45% of the time at our request rate,
-one (LI.FI) is severely rate-limited on its free tier, and one (0x) **structurally will not serve
-this asset class at all**. That is the measured state of "the APIs that combine this liquidity",
-and it is exactly the gap an on-chain router fills.
+**Consequence for the headline.** Of the three aggregator APIs we tested: Kyber answered ~47% of
+requests at our disclosed rate, LI.FI is severely rate-limited on its free tier, and 0x returned a
+not-authorized error for the stock tokens from both locations we tried. That is the measured state
+of the APIs that combine this liquidity, and it is the gap an on-chain router fills. Stated as
+observations, never as a claim about what any provider will or will not do in general.
 
 Availability instrumentation therefore runs on **Kyber + LI.FI**, as planned, with 0x recorded as a
 categorical refusal rather than an availability percentage.
