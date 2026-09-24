@@ -20,94 +20,95 @@ contract R09_OracleGuard is Test {
         vm.warp(1_790_000_000); // a plausible 2026 timestamp; the library reads block.timestamp
     }
 
-    function _p(address feed, bool stockIsInput, uint256 bps) internal pure returns (OracleGuard.Params memory) {
-        return OracleGuard.Params({feed: feed, stockIsInput: stockIsInput, maxDevBps: bps});
+    /// Params is now just the band: the feed and the direction are the router's to supply.
+    function _p(uint256 bps) internal pure returns (OracleGuard.Params memory) {
+        return OracleGuard.Params({maxDevBps: bps});
     }
 
     // ---------------------------------------------------------------- R-09
 
-    /// Nothing ties the feed to the asset. Pricing a $338 stock against a $246 feed produces a
-    /// floor 27% too low, and a fill that the correct feed rejects sails through.
-    function test_R09_wrongFeedSilentlyLowersTheFloor() public {
-        MockFeed aapl = new MockFeed(338_09628128, block.timestamp - 60, 8); // $338.096
-        MockFeed amzn = new MockFeed(246_10700000, block.timestamp - 60, 8); // $246.107
-
-        uint256 sell = 10e18; // 10 shares
-        uint256 fill = 2_535e6; // 2535 USDG = 75% of the true AAPL value
-
-        // correct feed, 3% band -> rejected
-        vm.expectRevert();
-        h.enforce(_p(address(aapl), true, 300), sell, fill, D18, D6);
-
-        // wrong (cheaper) feed, same 3% band -> accepted
-        (uint256 floorOut,) = h.enforce(_p(address(amzn), true, 300), sell, fill, D18, D6);
-        (uint256 trueRef,) = h.oracleOut(_p(address(aapl), true, 300), sell, D18, D6);
-
-        console2.log("true oracle value (USDG):", trueRef);
-        console2.log("floor from wrong feed   :", floorOut);
-        console2.log("fill accepted           :", fill);
-        assertLt(fill, trueRef * 80 / 100, "the fill is more than 20% below true value");
-        assertGe(fill, floorOut, "yet it cleared the wrong feed's floor");
-    }
-
-    /// Same hole, one step worse: a feed is just an address, so a caller can point at a contract
-    /// that returns any number. The guard then computes a floor of zero.
-    function test_R09_attackerSuppliedFeedMakesTheFloorZero() public {
-        MockFeed fake = new MockFeed(1, block.timestamp, 18); // price 1e-18 USD
-        (uint256 floorOut,) = h.enforce(_p(address(fake), true, 50), 1_000e18, 0, D18, D6);
-        assertEq(floorOut, 0, "floor collapsed to zero");
-    }
+    /// R-09 (was MEDIUM) — FIXED by removal. The caller can no longer supply a feed at all:
+    /// `Params` is just the band, and `PartitioRouterV2` reads the feed off an immutable map keyed
+    /// by the stock token. These tests live in test/review/R09_FeedBinding.t.sol, which exercises
+    /// the router; what remains here is the library's arithmetic, which is still worth fuzzing.
+    ///
+    /// The old tests `test_R09_wrongFeedSilentlyLowersTheFloor` and
+    /// `test_R09_attackerSuppliedFeedMakesTheFloorZero` are deleted rather than inverted: they
+    /// constructed `Params({feed: ...})`, and that field does not exist, so there is nothing left
+    /// to assert at this layer.
 
     // ---------------------------------------------------------------- R-10 + staleness matrix
 
-    function test_R10_futureUpdatedAtBypassesTheDeadFeedCeiling() public {
+    /// R-10 (was LOW) — FIXED. A timestamp far in the future used to skip the dead-feed ceiling
+    /// entirely, because `block.timestamp - upd` is never evaluated when `upd` is ahead.
+    function test_R10_futureUpdatedAtIsRejected() public {
         MockFeed f = new MockFeed(100e8, block.timestamp + 365 days, 8);
-        (, uint256 upd) = h.oracleOut(_p(address(f), true, 50), 1e18, D18, D6);
-        assertEq(upd, block.timestamp + 365 days, "a year-in-the-future timestamp is accepted");
+        vm.expectRevert(abi.encodeWithSelector(
+            OracleGuard.FeedFromTheFuture.selector,
+            block.timestamp + 365 days, block.timestamp, uint256(5 minutes)));
+        h.oracleOut(address(f), true, 1e18, D18, D6);
+    }
+
+    /// The tolerance is NOT zero, and that is a measurement rather than caution. Reading all 37
+    /// feeds against one 4663 block on 2026-09-24, TWO were already ahead of block.timestamp —
+    /// GLD by 11s and RDDT by 24s — so a zero-tolerance revert would have bricked those two tokens
+    /// the moment it shipped. A lead inside the tolerance must still be accepted.
+    function test_R10_smallForwardSkewIsStillAccepted() public {
+        MockFeed f = new MockFeed(100e8, block.timestamp + 30, 8);
+        (uint256 out,) = h.oracleOut(address(f), true, 1e18, D18, D6);
+        assertGt(out, 0, "a 30s lead must not brick the feed");
+
+        MockFeed g = new MockFeed(100e8, block.timestamp + 5 minutes, 8);
+        (uint256 out2,) = h.oracleOut(address(g), true, 1e18, D18, D6);
+        assertGt(out2, 0, "exactly at the tolerance is still alive");
+
+        MockFeed bad = new MockFeed(100e8, block.timestamp + 5 minutes + 1, 8);
+        vm.expectRevert();
+        h.oracleOut(address(bad), true, 1e18, D18, D6);
     }
 
     function test_clean_negativeAnswerRejected() public {
         MockFeed f = new MockFeed(-1, block.timestamp, 8);
         vm.expectRevert(abi.encodeWithSelector(OracleGuard.FeedBadAnswer.selector, int256(-1)));
-        h.oracleOut(_p(address(f), true, 50), 1e18, D18, D6);
+        h.oracleOut(address(f), true, 1e18, D18, D6);
     }
 
     function test_clean_zeroAnswerRejected() public {
         MockFeed f = new MockFeed(0, block.timestamp, 8);
         vm.expectRevert(abi.encodeWithSelector(OracleGuard.FeedBadAnswer.selector, int256(0)));
-        h.oracleOut(_p(address(f), true, 50), 1e18, D18, D6);
+        h.oracleOut(address(f), true, 1e18, D18, D6);
     }
 
     function test_clean_neverUpdatedRejected() public {
         MockFeed f = new MockFeed(100e8, 0, 8);
         vm.expectRevert(OracleGuard.FeedNeverUpdated.selector);
-        h.oracleOut(_p(address(f), true, 50), 1e18, D18, D6);
+        h.oracleOut(address(f), true, 1e18, D18, D6);
     }
 
     function test_clean_deadFeedBoundaryIsExactly120h() public {
         MockFeed f = new MockFeed(100e8, block.timestamp - 120 hours, 8);
-        h.oracleOut(_p(address(f), true, 50), 1e18, D18, D6); // exactly 120h: still alive
+        h.oracleOut(address(f), true, 1e18, D18, D6); // exactly 120h: still alive
         f.set(100e8, block.timestamp - 120 hours - 1);
         vm.expectRevert();
-        h.oracleOut(_p(address(f), true, 50), 1e18, D18, D6);
+        h.oracleOut(address(f), true, 1e18, D18, D6);
     }
 
     function test_clean_bandFloorAndCeiling() public {
         MockFeed f = new MockFeed(100e8, block.timestamp, 8);
         vm.expectRevert(abi.encodeWithSelector(OracleGuard.BandTooTight.selector, uint256(49), uint256(50)));
-        h.enforce(_p(address(f), true, 49), 1e18, type(uint256).max, D18, D6);
+        h.enforce(_p(49), address(f), true, 1e18, type(uint256).max, D18, D6);
         vm.expectRevert(abi.encodeWithSelector(OracleGuard.BandTooWide.selector, uint256(2001), uint256(2000)));
-        h.enforce(_p(address(f), true, 2001), 1e18, type(uint256).max, D18, D6);
-        h.enforce(_p(address(f), true, 50), 1e18, type(uint256).max, D18, D6);
-        h.enforce(_p(address(f), true, 2000), 1e18, type(uint256).max, D18, D6);
+        h.enforce(_p(2001), address(f), true, 1e18, type(uint256).max, D18, D6);
+        h.enforce(_p(50), address(f), true, 1e18, type(uint256).max, D18, D6);
+        h.enforce(_p(2000), address(f), true, 1e18, type(uint256).max, D18, D6);
     }
 
     /// The widest band the library permits is a 20% haircut. Anyone may relay, so this is also the
     /// most an adversarial relayer can extract on the router path while looking compliant.
     function test_widestBandPermitsATwentyPercentHaircut() public {
         MockFeed f = new MockFeed(338_09628128, block.timestamp, 8);
-        (uint256 ref,) = h.oracleOut(_p(address(f), true, 2000), 10e18, D18, D6);
-        (uint256 floorOut,) = h.enforce(_p(address(f), true, 2000), 10e18, ref * 80 / 100, D18, D6);
+        (uint256 ref,) = h.oracleOut(address(f), true, 10e18, D18, D6);
+        (uint256 floorOut,) = h.enforce(_p(2000), address(f), true, 10e18, ref * 80 / 100, D18, D6);
         assertEq(floorOut, ref * 8000 / 10000, "floor is 80% of the oracle");
         console2.log("oracle:", ref, "floor:", floorOut);
     }
@@ -123,11 +124,11 @@ contract R09_OracleGuard is Test {
         MockFeed f = new MockFeed(int256(uint256(price)), block.timestamp, uint8(fd));
         uint256 scale = 10 ** fd; // uint256 exponent: a uint8 one silently overflows the literal
 
-        (uint256 sellOut,) = h.oracleOut(_p(address(f), true, 50), amountIn, D18, D6);
+        (uint256 sellOut,) = h.oracleOut(address(f), true, amountIn, D18, D6);
         uint256 expectSell = (uint256(amountIn) * uint256(price) * 1e6) / (1e18 * scale);
         assertEq(sellOut, expectSell, "stock->usd scaling drifted");
 
-        (uint256 buyOut,) = h.oracleOut(_p(address(f), false, 50), amountIn, D6, D18);
+        (uint256 buyOut,) = h.oracleOut(address(f), false, amountIn, D6, D18);
         uint256 expectBuy = (uint256(amountIn) * 1e18 * scale) / (1e6 * uint256(price));
         assertEq(buyOut, expectBuy, "usd->stock scaling drifted");
     }
@@ -138,8 +139,8 @@ contract R09_OracleGuard is Test {
         bps = uint16(bound(bps, 50, 2000));
         vm.assume(amountIn > 0);
         MockFeed f = new MockFeed(338_09628128, block.timestamp, 8);
-        (uint256 ref,) = h.oracleOut(_p(address(f), true, bps), amountIn, D18, D6);
-        (uint256 floorOut,) = h.enforce(_p(address(f), true, bps), amountIn, type(uint256).max, D18, D6);
+        (uint256 ref,) = h.oracleOut(address(f), true, amountIn, D18, D6);
+        (uint256 floorOut,) = h.enforce(_p(bps), address(f), true, amountIn, type(uint256).max, D18, D6);
         assertLe(floorOut, ref, "floor exceeded the reference");
         assertGe(floorOut * 10_000 + 9_999, ref * (10_000 - bps), "floor lost more than one wei");
     }
@@ -151,7 +152,7 @@ contract R09_OracleGuard is Test {
         MockFeed f = new MockFeed(338_09628128, block.timestamp, 8);
         uint256 lastZero;
         for (uint256 a = 1; a <= 4e9; a = a * 2 + 1) {
-            (uint256 ref,) = h.oracleOut(_p(address(f), true, 50), a, D18, D6);
+            (uint256 ref,) = h.oracleOut(address(f), true, a, D18, D6);
             if (ref == 0) lastZero = a;
         }
         console2.log("largest tested amountIn whose floor is zero (AAPL wei):", lastZero);

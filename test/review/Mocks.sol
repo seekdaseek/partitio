@@ -37,6 +37,7 @@ contract ShortFillPool is IUniswapV3SwapCallback {
 
     function setGive(uint256 g) external { give = g; }
     function setOverdraw(uint256 o) external { overdraw = o; }
+    function setFill(uint256 b) external { consumeBps = b; }
     function swap(address recipient, bool zeroForOne, int256 amountSpecified, uint160, bytes calldata data)
         external
         returns (int256 amount0, int256 amount1)
@@ -107,4 +108,32 @@ contract MockFeed {
     function latestRoundData() external view returns (uint80, int256, uint256, uint256, uint80) {
         return (1, answer, updatedAt, updatedAt, 1);
     }
+}
+
+/// @notice A pool that invokes the swap callback TWICE inside one swap, each time asking for the
+/// full leg. A per-callback budget comparison would let it draw double; only a decrementing
+/// counter stops it. The audit flagged that the single-invocation mock above cannot cover this.
+contract DoubleCallbackPool is IUniswapV3SwapCallback {
+    address public token0;
+    address public token1;
+    uint256 public give;
+
+    constructor(address t0, address t1) { token0 = t0; token1 = t1; }
+
+    function setGive(uint256 g) external { give = g; }
+
+    function swap(address recipient, bool zeroForOne, int256 amountSpecified, uint160, bytes calldata data)
+        external
+        returns (int256 amount0, int256 amount1)
+    {
+        uint256 want = uint256(amountSpecified);
+        address tOut = zeroForOne ? token1 : token0;
+        if (give != 0) IERC20(tOut).transfer(recipient, give);
+        if (zeroForOne) { amount0 = int256(want); amount1 = -int256(give); }
+        else { amount1 = int256(want); amount0 = -int256(give); }
+        IUniswapV3SwapCallback(msg.sender).uniswapV3SwapCallback(amount0, amount1, data);
+        IUniswapV3SwapCallback(msg.sender).uniswapV3SwapCallback(amount0, amount1, data); // second bite
+    }
+
+    function uniswapV3SwapCallback(int256, int256, bytes calldata) external pure override {}
 }

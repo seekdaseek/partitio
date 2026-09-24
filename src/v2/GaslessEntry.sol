@@ -14,7 +14,7 @@ import {PartitioRouterV2} from "./PartitioRouterV2.sol";
 
 /// @title GaslessEntry
 /// @notice One signature, no ETH. The user signs an order; a relayer pays gas and is repaid in
-/// USDG out of the order, capped by the user's own `maxFee`.
+/// USDG out of the order, capped by the user's own `maxFeeUsdg` and by a hard percentage bound.
 ///
 /// REPLAY PROTECTION. For a USDG order the EIP-3009 authorization nonce **is** the order hash, so
 /// USDG's own `authorizationState` makes a second execution impossible at the token level. That is
@@ -22,45 +22,53 @@ import {PartitioRouterV2} from "./PartitioRouterV2.sol";
 /// carries no order binding at all. Both are enforced for every order rather than reasoning about
 /// which path is protected by which.
 ///
+/// ONE OUTPUT. Baskets are out of v1. The multi-output path could never be filled — one leg array
+/// was reused for every output, so either the guard rejected the second output's zero fill or the
+/// router silently bought the wrong token — and shipping an unreachable branch is worse than not
+/// shipping it (review finding R-05).
+///
 /// THE AGGREGATOR LEG IS THE PRODUCT, not a bonus. Measured, partitio runs 1-87 bps behind Kyber
 /// when Kyber answers, and Kyber answers roughly 47% of the time at our request rate. So the
 /// relayer passes whichever route quoted highest, and this contract:
 ///   - only ever calls an aggregator target from an immutable allowlist fixed at deployment;
 ///   - approves exactly the amount, then resets the allowance to zero;
-///   - accounts by balance delta, never by the target's return value;
-///   - falls back to partitio IN THE SAME TRANSACTION if the aggregator leg reverts or delivers
-///     less than the router would have.
-/// The user's `minOut` and the oracle guard are enforced on the final balance either way, so a
-/// hostile or stale aggregator route degrades the price at worst and cannot steal.
+///   - accounts by balance delta bracketed around EACH external call, never by a return value and
+///     never by subtracting from an assumed base;
+///   - falls back to partitio IN THE SAME TRANSACTION if the aggregator leg reverts, under-delivers
+///     or is beaten by partitio's own quote.
+///
+/// THE ORACLE FLOOR IS ONE AGGREGATE CHECK, run in `fill` after every branch, over the total input
+/// measurably spent and the gross proceeds. It used to live inside the accepted-aggregator branch,
+/// which meant a route that was *rejected* after eating most of the input was never guarded at all,
+/// and `aggMinOut` — a relayer-supplied field — was an off-switch for it (review findings
+/// `agg-reject-path-unguarded`, `aggminout-guard-offswitch`). There is now no branch that can skip
+/// it.
 contract GaslessEntry is EIP712, ReentrancyGuardTransient {
     using SafeERC20 for IERC20;
-
-    struct Output {
-        address token;
-        uint16 weightBps;     // share of amountIn routed to this token; must sum to 10_000
-        uint256 minOut;       // the user's own floor for this output
-        OracleGuard.Params guard;
-    }
 
     struct Order {
         address owner;
         address tokenIn;
         uint256 amountIn;
-        uint256 maxFee;       // maximum the relayer may keep, in tokenIn units
+        address tokenOut;
+        uint256 minOut;        // floor on what the owner NETS, after any fee
+        uint256 maxFeeUsdg;    // maximum the relayer may keep, ALWAYS in 6-decimal USDG
         uint256 deadline;
         bytes32 salt;
-        Output[] outputs;
+        OracleGuard.Params guard;
     }
 
-    bytes32 private constant GUARD_TYPEHASH =
-        keccak256("Guard(address feed,bool stockIsInput,uint256 maxDevBps)");
-    bytes32 private constant OUTPUT_TYPEHASH =
-        keccak256("Output(address token,uint16 weightBps,uint256 minOut,Guard guard)Guard(address feed,bool stockIsInput,uint256 maxDevBps)");
+    bytes32 private constant GUARD_TYPEHASH = keccak256("Guard(uint256 maxDevBps)");
     bytes32 private constant ORDER_TYPEHASH = keccak256(
-        "Order(address owner,address tokenIn,uint256 amountIn,uint256 maxFee,uint256 deadline,bytes32 salt,Output[] outputs)Guard(address feed,bool stockIsInput,uint256 maxDevBps)Output(address token,uint16 weightBps,uint256 minOut,Guard guard)"
+        "Order(address owner,address tokenIn,uint256 amountIn,address tokenOut,uint256 minOut,uint256 maxFeeUsdg,uint256 deadline,bytes32 salt,Guard guard)Guard(uint256 maxDevBps)"
     );
 
-    uint256 public constant MAX_OUTPUTS = 10;
+    /// The absolute cap the user signs is a number; this is the shape. A relayer's real cost is
+    /// gas, so a fee worth more than 0.50% of the order is not a fee, and an absolute cap alone
+    /// could not express that — `maxFee` used to be documented as "in tokenIn units" while the fee
+    /// was paid in USDG, which made the cap loose by ~10^12 on an 18-decimal sell (review finding
+    /// `maxfee-denomination-sell`). The field is now named for its denomination and bounded twice.
+    uint256 public constant MAX_FEE_BPS = 50; // 0.50%
 
     IUSDG public immutable USDG;
     PartitioRouterV2 public immutable ROUTER;
@@ -73,23 +81,24 @@ contract GaslessEntry is EIP712, ReentrancyGuardTransient {
 
     event OrderFilled(
         address indexed owner, bytes32 indexed orderHash, address indexed relayer,
-        address tokenIn, uint256 amountIn, uint256 fee, uint256 outputsFilled, bool usedAggregator
+        address tokenIn, address tokenOut, uint256 amountSpent, uint256 amountOut,
+        uint256 feeUsdg, bool usedAggregator
     );
-    event AggregatorLegRejected(address target, uint256 got, uint256 routerWouldGive);
+    event AggregatorLegRejected(address target, uint256 got, uint256 bar);
 
     error BadSignature();
     error AlreadyExecuted(bytes32 orderHash);
     error Expired();
-    error BadWeights(uint256 sum);
-    error TooManyOutputs(uint256 n);
-    error FeeAboveMax(uint256 fee, uint256 maxFee);
+    error SameToken();
+    error FeeAboveMax(uint256 fee, uint256 limit);
     error OutputBelowMin(address token, uint256 got, uint256 minOut);
     error AggregatorNotAllowed(address target);
-    error DustLeftBehind(address token, uint256 amount);
     error FeeNotPayableInUSDG();
+    error LegsDoNotCoverOrder(uint256 sum, uint256 expected);
+    error NothingSpent();
 
     constructor(IUSDG usdg, PartitioRouterV2 router, address[4] memory aggregators)
-        EIP712("partitio", "2")
+        EIP712("partitio", "3")
     {
         USDG = usdg;
         ROUTER = router;
@@ -106,23 +115,14 @@ contract GaslessEntry is EIP712, ReentrancyGuardTransient {
     // ------------------------------------------------------------------ hashing
 
     function _hashGuard(OracleGuard.Params calldata g) internal pure returns (bytes32) {
-        return keccak256(abi.encode(GUARD_TYPEHASH, g.feed, g.stockIsInput, g.maxDevBps));
-    }
-
-    function _hashOutputs(Output[] calldata outs) internal pure returns (bytes32) {
-        bytes32[] memory h = new bytes32[](outs.length);
-        for (uint256 i = 0; i < outs.length; i++) {
-            h[i] = keccak256(
-                abi.encode(OUTPUT_TYPEHASH, outs[i].token, outs[i].weightBps, outs[i].minOut, _hashGuard(outs[i].guard))
-            );
-        }
-        return keccak256(abi.encodePacked(h));
+        return keccak256(abi.encode(GUARD_TYPEHASH, g.maxDevBps));
     }
 
     function hashOrder(Order calldata o) public view returns (bytes32) {
         return _hashTypedDataV4(
             keccak256(abi.encode(
-                ORDER_TYPEHASH, o.owner, o.tokenIn, o.amountIn, o.maxFee, o.deadline, o.salt, _hashOutputs(o.outputs)
+                ORDER_TYPEHASH, o.owner, o.tokenIn, o.amountIn, o.tokenOut, o.minOut,
+                o.maxFeeUsdg, o.deadline, o.salt, _hashGuard(o.guard)
             ))
         );
     }
@@ -142,15 +142,15 @@ contract GaslessEntry is EIP712, ReentrancyGuardTransient {
         PartitioRouterV2.Leg[] legs;   // partitio legs, also the fallback
     }
 
-    /// @notice Fill a signed order. Caller (the relayer) pays gas and keeps `fee` in tokenIn.
+    /// @notice Fill a signed order. Caller (the relayer) pays gas and keeps `fee` in USDG.
     function fill(Order calldata o, Auth calldata a, Route calldata route, uint256 fee)
         external
         nonReentrant
-        returns (uint256[] memory outs)
+        returns (uint256 amountOut)
     {
         if (block.timestamp > o.deadline) revert Expired();
-        if (o.outputs.length == 0 || o.outputs.length > MAX_OUTPUTS) revert TooManyOutputs(o.outputs.length);
-        if (fee > o.maxFee) revert FeeAboveMax(fee, o.maxFee);
+        if (o.tokenIn == o.tokenOut) revert SameToken();
+        if (fee > o.maxFeeUsdg) revert FeeAboveMax(fee, o.maxFeeUsdg);
 
         bytes32 oh = hashOrder(o);
         if (executed[oh]) revert AlreadyExecuted(oh);
@@ -158,68 +158,76 @@ contract GaslessEntry is EIP712, ReentrancyGuardTransient {
 
         if (ECDSA.recover(oh, a.v, a.r, a.s) != o.owner) revert BadSignature();
 
-        uint256 sum;
-        for (uint256 i = 0; i < o.outputs.length; i++) sum += o.outputs[i].weightBps;
-        if (sum != 10_000) revert BadWeights(sum);
-
-        _pullIn(o, a, oh);
-
         // THE FEE IS ALWAYS PAID IN USDG, never in stock.
         //   buy  (tokenIn == USDG): taken off the input, before the swap.
         //   sell (tokenIn != USDG): taken out of the USDG output, after the swap.
         // A route with no USDG on either side cannot pay a fee at all, and says so rather than
         // silently charging the user in whatever asset happened to be moving.
         bool feeFromInput = (o.tokenIn == address(USDG));
-        if (fee != 0 && !feeFromInput && _usdgOutputIndex(o) == type(uint256).max) {
-            revert FeeNotPayableInUSDG();
-        }
+        if (fee != 0 && !feeFromInput && o.tokenOut != address(USDG)) revert FeeNotPayableInUSDG();
 
-        outs = new uint256[](o.outputs.length);
+        uint256 inBefore = IERC20(o.tokenIn).balanceOf(address(this));
+        _pullIn(o, a, oh);
+
         uint256 spendable = feeFromInput ? o.amountIn - fee : o.amountIn;
-        bool usedAgg;
-
-        // Single-output orders may use the relayer's aggregator route; baskets always use partitio,
-        // because an aggregator route is quoted for one pair and cannot be split by weight safely.
-        if (o.outputs.length == 1) {
-            (outs[0], usedAgg) = _fillSingle(o, route, spendable, feeFromInput ? fee : 0);
-        } else {
-            for (uint256 i = 0; i < o.outputs.length; i++) {
-                uint256 part = (spendable * o.outputs[i].weightBps) / 10_000;
-                outs[i] = _viaRouter(o.tokenIn, o.outputs[i], route.legs, part);
-            }
+        if (feeFromInput && fee * 10_000 > o.amountIn * MAX_FEE_BPS) {
+            revert FeeAboveMax(fee, (o.amountIn * MAX_FEE_BPS) / 10_000);
         }
 
-        // On a sell, the fee comes out of the USDG leg before the user is paid, so `minOut` is
-        // checked against what the user ACTUALLY receives, not against the gross fill.
+        // R-04: the relayer's legs must cover the whole order. Checked on the RAW legs, because
+        // `_scaleLegs` rewrites them to sum to whatever it is handed — asserting the sum after
+        // scaling would be a tautology, and asserting it on the aggregator remainder would break
+        // the fallback outright.
+        uint256 legSum;
+        for (uint256 i = 0; i < route.legs.length; i++) legSum += route.legs[i].amountIn;
+        if (legSum != spendable) revert LegsDoNotCoverOrder(legSum, spendable);
+
+        uint256 spent;
+        bool usedAgg;
+        (amountOut, spent, usedAgg) = _fillSingle(o, route, spendable);
+        if (spent == 0) revert NothingSpent();
+
+        // ONE aggregate oracle floor, over gross proceeds against the input measurably spent.
+        //
+        // Gross, not net: on a buy the fee comes off the input so the guard's basis shrinks with
+        // it, but on a sell the fee comes out of the output, and charging it against the band would
+        // make small sells unfillable for arithmetic reasons rather than price ones — a $5 sell
+        // with a $0.25 fee is 500 bps against the app's 200 bps default. The fee is separately
+        // bounded by MAX_FEE_BPS and by the signed cap, and `minOut` below is checked on the NET.
+        {
+            (address feed, bool stockIsInput) = ROUTER.feedFor(o.tokenIn, o.tokenOut);
+            OracleGuard.enforce(
+                o.guard, feed, stockIsInput, spent, amountOut,
+                IERC20Metadata(o.tokenIn).decimals(), IERC20Metadata(o.tokenOut).decimals()
+            );
+        }
+
+        // On a sell the fee comes out of the USDG leg before the user is paid.
         if (fee != 0 && !feeFromInput) {
-            uint256 ui = _usdgOutputIndex(o);
-            if (outs[ui] < fee) revert FeeAboveMax(fee, outs[ui]);
-            outs[ui] -= fee;
+            if (fee > amountOut) revert FeeAboveMax(fee, amountOut);
+            if (fee * 10_000 > amountOut * MAX_FEE_BPS) {
+                revert FeeAboveMax(fee, (amountOut * MAX_FEE_BPS) / 10_000);
+            }
+            amountOut -= fee;
             IERC20(address(USDG)).safeTransfer(msg.sender, fee);
         }
 
-        for (uint256 i = 0; i < o.outputs.length; i++) {
-            if (outs[i] < o.outputs[i].minOut) revert OutputBelowMin(o.outputs[i].token, outs[i], o.outputs[i].minOut);
-            IERC20(o.outputs[i].token).safeTransfer(o.owner, outs[i]);
-            uint256 left = IERC20(o.outputs[i].token).balanceOf(address(this));
-            if (left != 0) revert DustLeftBehind(o.outputs[i].token, left);
-        }
+        if (amountOut < o.minOut) revert OutputBelowMin(o.tokenOut, amountOut, o.minOut);
+        IERC20(o.tokenOut).safeTransfer(o.owner, amountOut);
 
         if (fee != 0 && feeFromInput) IERC20(o.tokenIn).safeTransfer(msg.sender, fee);
-        uint256 dust = IERC20(o.tokenIn).balanceOf(address(this));
-        if (dust != 0) IERC20(o.tokenIn).safeTransfer(o.owner, dust);
 
-        emit OrderFilled(o.owner, oh, msg.sender, o.tokenIn, o.amountIn, fee, o.outputs.length, usedAgg);
+        // Forward exactly THIS order's unspent input. Measured as a delta rather than as an
+        // absolute balance: an absolute sweep would hand a previous order's residue — or an
+        // attacker's donation — to whoever happens to sign next (review finding `r06-gasless-sweep`).
+        // Must stay below the fee transfer, which also draws on tokenIn.
+        uint256 inAfter = IERC20(o.tokenIn).balanceOf(address(this));
+        if (inAfter > inBefore) IERC20(o.tokenIn).safeTransfer(o.owner, inAfter - inBefore);
+
+        emit OrderFilled(o.owner, oh, msg.sender, o.tokenIn, o.tokenOut, spent, amountOut, fee, usedAgg);
     }
 
     // ------------------------------------------------------------------ internals
-
-    function _usdgOutputIndex(Order calldata o) internal view returns (uint256) {
-        for (uint256 i = 0; i < o.outputs.length; i++) {
-            if (o.outputs[i].token == address(USDG)) return i;
-        }
-        return type(uint256).max;
-    }
 
     function _pullIn(Order calldata o, Auth calldata a, bytes32 oh) internal {
         if (o.tokenIn == address(USDG)) {
@@ -243,8 +251,8 @@ contract GaslessEntry is EIP712, ReentrancyGuardTransient {
     /// @notice Copy the caller's legs, rescaled so they sum to exactly `target`.
     /// @dev The legs are quoted for the full input. After a PARTIAL aggregator fill only the
     /// returned remainder is available, and handing the router the original amounts makes it pull
-    /// more than the approval — which is precisely how this was found. Any rounding dust from the
-    /// division is added to the last leg so the legs always sum to `target` exactly.
+    /// more than the approval. Any rounding dust from the division is added to the last leg so the
+    /// legs always sum to `target` exactly.
     function _scaleLegs(PartitioRouterV2.Leg[] calldata legs, uint256 target)
         internal pure returns (PartitioRouterV2.Leg[] memory out)
     {
@@ -261,68 +269,76 @@ contract GaslessEntry is EIP712, ReentrancyGuardTransient {
         }
     }
 
-    function _viaRouter(
-        address tokenIn, Output calldata out, PartitioRouterV2.Leg[] calldata legs, uint256 amountIn
-    ) internal returns (uint256) {
+    /// @return got gross proceeds of tokenOut, measured as a bracketed delta
+    /// @return spent tokenIn measurably consumed by this call
+    function _viaRouter(Order calldata o, PartitioRouterV2.Leg[] calldata legs, uint256 amountIn)
+        internal
+        returns (uint256 got, uint256 spent)
+    {
+        if (amountIn == 0) return (0, 0);
         PartitioRouterV2.Leg[] memory scaled = _scaleLegs(legs, amountIn);
-        IERC20(tokenIn).forceApprove(address(ROUTER), amountIn);
-        uint256 got = ROUTER.swapExactIn(
-            tokenIn, out.token, scaled, out.guard, 0, address(this), block.timestamp
-        );
-        IERC20(tokenIn).forceApprove(address(ROUTER), 0);
-        return got;
+        uint256 inBefore = IERC20(o.tokenIn).balanceOf(address(this));
+        uint256 outBefore = IERC20(o.tokenOut).balanceOf(address(this));
+        IERC20(o.tokenIn).forceApprove(address(ROUTER), amountIn);
+        ROUTER.swapExactIn(o.tokenIn, o.tokenOut, scaled, o.guard, 0, address(this), block.timestamp);
+        IERC20(o.tokenIn).forceApprove(address(ROUTER), 0);
+        got = IERC20(o.tokenOut).balanceOf(address(this)) - outBefore;
+        uint256 inAfter = IERC20(o.tokenIn).balanceOf(address(this));
+        spent = inAfter >= inBefore ? 0 : inBefore - inAfter;
     }
 
-    /// @param feeReserve tokenIn already earmarked for the relayer and NOT available to route.
-    /// Without it the fallback spends the fee as well and the payout at the end reverts with the
-    /// token's own InsufficientFunds — which is how this was found.
-    function _fillSingle(Order calldata o, Route calldata route, uint256 spendable, uint256 feeReserve)
+    function _fillSingle(Order calldata o, Route calldata route, uint256 spendable)
         internal
-        returns (uint256 got, bool usedAgg)
+        returns (uint256 got, uint256 spent, bool usedAgg)
     {
-        Output calldata out = o.outputs[0];
         if (route.aggregator == address(0)) {
-            return (_viaRouter(o.tokenIn, out, route.legs, spendable), false);
+            (got, spent) = _viaRouter(o, route.legs, spendable);
+            return (got, spent, false);
         }
         if (!isAllowedAggregator(route.aggregator)) revert AggregatorNotAllowed(route.aggregator);
 
-        uint256 snapshot = IERC20(out.token).balanceOf(address(this));
+        // Bracket the aggregator call on BOTH tokens. Deriving `spent` by subtracting a final
+        // balance from an assumed base let a donated tokenIn deflate the oracle floor, because the
+        // donation read as input the route had not consumed (review finding
+        // `spent-must-be-bracketed-delta`).
+        uint256 inBefore = IERC20(o.tokenIn).balanceOf(address(this));
+        uint256 outBefore = IERC20(o.tokenOut).balanceOf(address(this));
         IERC20(o.tokenIn).forceApprove(route.aggregator, spendable);
         (bool ok,) = route.aggregator.call(route.callData);
         IERC20(o.tokenIn).forceApprove(route.aggregator, 0);
 
-        if (ok) {
-            got = IERC20(out.token).balanceOf(address(this)) - snapshot;
-            uint256 spent = spendable - IERC20(o.tokenIn).balanceOf(address(this));
-            // The bar is NOT the user's minOut — that floor is usually loose enough for a poor
-            // aggregator fill to slip under it. The bar is `aggMinOut`: what partitio itself would
+        uint256 inAfter = IERC20(o.tokenIn).balanceOf(address(this));
+        got = IERC20(o.tokenOut).balanceOf(address(this)) - outBefore;
+        spent = inAfter >= inBefore ? 0 : inBefore - inAfter;
+
+        if (ok && spent != 0 && spent <= spendable) {
+            // The bar is NOT just the user's minOut — that floor is usually loose enough for a poor
+            // aggregator fill to slip under it. It is `aggMinOut`: what partitio itself would
             // return for the same input, asserted by the relayer that quoted both. An aggregator
             // route is only worth taking if it beats our own route.
             //
-            // A relayer that understates aggMinOut only makes its own route less likely to be
-            // used; a relayer that overstates it forces the fallback. Either way the user is still
-            // protected by their own minOut and by the oracle floor, so this field cannot be used
-            // against them.
-            uint256 bar = out.minOut > route.aggMinOut ? out.minOut : route.aggMinOut;
-            if (got >= bar && spent <= spendable && spent > 0) {
-                // THE GUARD APPLIES TO THE AGGREGATOR PATH TOO. It lives inside the router, so a
-                // route that never touches the router would otherwise skip it entirely — the
-                // first version of this function did exactly that, which would have let a stale
-                // or hostile aggregator deliver an arbitrarily bad fill under a loose minOut.
-                OracleGuard.enforce(
-                    out.guard, spent, got,
-                    IERC20Metadata(o.tokenIn).decimals(), IERC20Metadata(out.token).decimals()
-                );
-                return (got, true);
-            }
+            // A relayer that overstates aggMinOut forces the fallback, which used to be how the
+            // oracle floor was switched off — the rejected branch guarded nothing. It no longer
+            // buys anything: the aggregate floor in `fill` covers both branches, so this field is
+            // now purely a routing preference.
+            uint256 bar = o.minOut > route.aggMinOut ? o.minOut : route.aggMinOut;
+            if (got >= bar) return (got, spent, true);
             emit AggregatorLegRejected(route.aggregator, got, bar);
         }
 
-        uint256 bal = IERC20(o.tokenIn).balanceOf(address(this));
-        uint256 remaining = bal > feeReserve ? bal - feeReserve : 0;
+        // Fall back with whatever input is left. `got` and `spent` accumulate across both legs, so
+        // the aggregate guard in `fill` sees everything the aggregator consumed even when its
+        // result was rejected.
+        // `spendable - spent` is always actually held: this order pulled in `amountIn`, the
+        // aggregator took `spent` of it, and `amountIn - spendable` is the fee reserve we must not
+        // touch. Sizing from the budget rather than from `balanceOf` also means a donation cannot
+        // be routed into the order, which would otherwise inflate the guard's basis.
+        uint256 remaining = spendable > spent ? spendable - spent : 0;
         if (remaining > 0) {
-            got += _viaRouter(o.tokenIn, out, route.legs, remaining);
+            (uint256 got2, uint256 spent2) = _viaRouter(o, route.legs, remaining);
+            got += got2;
+            spent += spent2;
         }
-        return (got, false);
+        return (got, spent, false);
     }
 }

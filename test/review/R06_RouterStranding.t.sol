@@ -2,25 +2,28 @@
 pragma solidity ^0.8.26;
 
 import {Test, console2} from "forge-std/Test.sol";
-import {Vm} from "forge-std/Vm.sol";
 import {PartitioRouterV2} from "../../src/v2/PartitioRouterV2.sol";
 import {OracleGuard} from "../../src/v2/OracleGuard.sol";
 import {IPoolManager} from "../../src/interfaces/IPoolManager.sol";
 import {IERC20} from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
-import {ShortFillPool, ShortFillPair} from "./Mocks.sol";
+import {ShortFillPool, ShortFillPair, DoubleCallbackPool} from "./Mocks.sol";
 
-/// R-06  MEDIUM  A short-filling venue is recorded as a full fill and the residue is stranded.
-/// R-07  LOW     The venue leaf commits token0/token1, but settlement uses the pool's own report.
-/// R-08  LOW     The v3 callback has no per-leg budget.
+/// R-06, R-07, R-08 (were MEDIUM / LOW / LOW) — FIXED. Positive tests.
 ///
-/// `_execute` decides success from "did the call revert", never from "did it consume amountIn":
-///     try IUniswapV3Pool(v.target).swap(...) { return true; } catch { return false; }
-///     try IPropPair(v.target).swapExactIn(...) returns (uint256 o) { return o != 0; }
-/// A v3 pool that exhausts its liquidity against the price limit, and a propAMM pair that fills
-/// part of the size, both return normally having consumed less than `amountIn`. `unfilled` stays
-/// zero, so the residue is neither re-routed nor refunded. PartitioRouterV2 has no owner, no sweep
-/// and no rescue, and `before = balanceOf(tokenOut)` in every later call excludes whatever is
-/// already sitting there - so the residue is unrecoverable by anyone, including the depositor.
+/// R-06: `_execute` returned a boolean meaning "the call did not revert", so a v3 pool that
+/// exhausted its liquidity and a propAMM pair that part-filled were both booked as full fills and
+/// their residue was stranded permanently in a contract with no sweep. `_execute` now returns
+/// MEASURED consumption and both loops drive off it, so the shortfall re-routes and is then
+/// refunded to the payer.
+///
+/// R-07: the callback settled in `IUniswapV3Pool(pool).token0()` — the pool's own claim — rather
+/// than the Merkle-committed token. It now pays the committed token, read from transient storage
+/// that `_execute` wrote. Reading it from the callback's `data` would have been no fix at all:
+/// `data` is supplied by the pool, which is exactly the actor R-07 defends against.
+///
+/// R-08: the callback honoured any delta the pool asked for. The budget is now a DECREMENTING
+/// transient counter, so N callbacks inside one swap share one allowance rather than getting one
+/// each — which a per-callback comparison would not have caught.
 contract R06_RouterStranding is Test {
     address constant PM = 0x8366a39CC670B4001A1121B8F6A443A643e40951;
     address constant AAPL = 0xaF3D76f1834A1d425780943C99Ea8A608f8a93f9;
@@ -31,33 +34,39 @@ contract R06_RouterStranding is Test {
     PartitioRouterV2 internal router;
     ShortFillPool internal pool;
     ShortFillPair internal pair;
+    ShortFillPool internal liarPool;
+    DoubleCallbackPool internal greedy;
+
     PartitioRouterV2.Venue[] internal venues;
     bytes32[] internal leaves;
     bytes32 internal root;
     address internal trader = address(0xCAFE);
 
-    /// Leaf 0: the short-filling v3 pool, honestly described.
-    /// Leaf 1: the short-filling propAMM pair.
-    /// Leaf 2: a v3 pool whose leaf says (USDG, AAPL) while the deployed code reports token0()
-    ///         as AMZN - the R-07 divergence.
+    /// Leaf 0: a v3 pool consuming 95% of every leg.
+    /// Leaf 1: a propAMM pair consuming 60%.
+    /// Leaf 2: a v3 pool whose leaf says (USDG, AAPL) while its code reports token0() as AMZN.
+    /// Leaf 3: a v3 pool that calls the callback twice, asking for the full leg each time.
     function setUp() public {
-        pool = new ShortFillPool(USDG, AAPL, 9_500); // consumes 95% of every leg
-        pair = new ShortFillPair(USDG, AAPL, 6_000); // consumes 60% of every leg
-        ShortFillPool liar = new ShortFillPool(AMZN, AAPL, 10_000);
+        pool = new ShortFillPool(USDG, AAPL, 9_500);
+        pair = new ShortFillPair(USDG, AAPL, 6_000);
+        liarPool = new ShortFillPool(AMZN, AAPL, 10_000);
+        greedy = new DoubleCallbackPool(USDG, AAPL);
 
         venues.push(PartitioRouterV2.Venue(PartitioRouterV2.Kind.V3, address(pool), USDG, AAPL, 0, 0, address(0)));
         venues.push(PartitioRouterV2.Venue(PartitioRouterV2.Kind.MAKER, address(pair), USDG, AAPL, 0, 0, address(0)));
-        venues.push(PartitioRouterV2.Venue(PartitioRouterV2.Kind.V3, address(liar), USDG, AAPL, 0, 0, address(0)));
-        venues.push(PartitioRouterV2.Venue(PartitioRouterV2.Kind.V3, address(0xdead), USDG, AAPL, 0, 0, address(0)));
+        venues.push(PartitioRouterV2.Venue(PartitioRouterV2.Kind.V3, address(liarPool), USDG, AAPL, 0, 0, address(0)));
+        venues.push(PartitioRouterV2.Venue(PartitioRouterV2.Kind.V3, address(greedy), USDG, AAPL, 0, 0, address(0)));
         for (uint256 i = 0; i < venues.length; i++) {
             leaves.push(keccak256(bytes.concat(keccak256(abi.encode(venues[i])))));
         }
         root = _pair(_pair(leaves[0], leaves[1]), _pair(leaves[2], leaves[3]));
-        router = new PartitioRouterV2(IPoolManager(PM), root);
-        liarPool = liar;
-    }
 
-    ShortFillPool internal liarPool;
+        address[] memory toks = new address[](1);
+        address[] memory fds = new address[](1);
+        toks[0] = AAPL;
+        fds[0] = AAPL_FEED;
+        router = new PartitioRouterV2(IPoolManager(PM), root, toks, fds);
+    }
 
     function _pair(bytes32 a, bytes32 b) internal pure returns (bytes32) {
         return a <= b ? keccak256(abi.encode(a, b)) : keccak256(abi.encode(b, a));
@@ -77,7 +86,7 @@ contract R06_RouterStranding is Test {
     }
 
     function _guard(uint256 bps) internal pure returns (OracleGuard.Params memory) {
-        return OracleGuard.Params({feed: AAPL_FEED, stockIsInput: false, maxDevBps: bps});
+        return OracleGuard.Params({maxDevBps: bps});
     }
 
     function _oracleAapl(uint256 usdgIn) internal view returns (uint256) {
@@ -86,12 +95,12 @@ contract R06_RouterStranding is Test {
         return (usdgIn * 1e18 * (10 ** fd)) / (1e6 * uint256(answer));
     }
 
-    // ---------------------------------------------------------------- R-06 v3
+    // ---------------------------------------------------------------- R-06
 
-    function test_R06_v3ShortFillIsCountedAsSuccessAndResidueIsStranded() public {
+    /// A v3 venue consuming 95% of its leg: whatever it declines comes back to the payer and the
+    /// router keeps nothing.
+    function test_R06_v3ShortFillRefundsTheResidue() public {
         uint256 amt = 1000e6;
-        // the pool pays out enough to clear a 3% band computed on the FULL 1000 USDG, so nothing
-        // downstream notices that only 950 USDG were actually spent
         uint256 payout = (_oracleAapl(amt) * 9_800) / 10_000;
         deal(AAPL, address(pool), payout);
         pool.setGive(payout);
@@ -99,52 +108,25 @@ contract R06_RouterStranding is Test {
         deal(USDG, trader, amt);
         vm.startPrank(trader);
         IERC20(USDG).approve(address(router), amt);
-        vm.recordLogs();
         uint256 out = router.swapExactIn(
             USDG, AAPL, _legs1(0, amt), _guard(300), 0, trader, block.timestamp + 300
         );
         vm.stopPrank();
 
         uint256 stranded = IERC20(USDG).balanceOf(address(router));
-        console2.log("routed (USDG)      :", amt);
-        console2.log("pool consumed      :", amt - stranded);
-        console2.log("stranded in router :", stranded);
-        console2.log("AAPL out           :", out);
-
-        assertEq(stranded, 50e6, "5% of the order is sitting in the router");
-        assertEq(IERC20(USDG).balanceOf(trader), 0, "the trader was never refunded");
-        assertEq(_legFailedCount(), 0, "no LegFailed event was emitted - it looked like a full fill");
-        assertGt(out, 0, "and the swap reported success");
+        uint256 refunded = IERC20(USDG).balanceOf(trader);
+        uint256 consumed = IERC20(USDG).balanceOf(address(pool));
+        console2.log("consumed by the venue:", consumed);
+        console2.log("refunded to the trader:", refunded);
+        console2.log("stranded in the router:", stranded);
+        assertEq(stranded, 0, "router must hold nothing");
+        assertGt(refunded, 0, "the residue should have come back");
+        assertEq(consumed + refunded, amt, "every wei accounted for");
+        assertGt(out, 0, "and the swap still delivered");
     }
 
-    /// The stranded USDG cannot be recovered: no admin surface, and the balance snapshot in every
-    /// later swap deliberately excludes it.
-    function test_R06_strandedResidueIsUnrecoverable() public {
-        test_R06_v3ShortFillIsCountedAsSuccessAndResidueIsStranded();
-        uint256 stranded = IERC20(USDG).balanceOf(address(router));
-        assertGt(stranded, 0);
-
-        bytes memory code = address(router).code;
-        assertFalse(_hasSel(code, bytes4(keccak256("owner()"))));
-        assertFalse(_hasSel(code, bytes4(keccak256("sweep(address)"))));
-        assertFalse(_hasSel(code, bytes4(keccak256("rescue(address,uint256)"))));
-        assertFalse(_hasSel(code, bytes4(keccak256("skim(address)"))));
-
-        // a later swap that OUTPUTS USDG cannot pick it up either
-        uint256 amt = 10e6;
-        deal(AAPL, address(pool), 1e18);
-        pool.setGive(1e18);
-        deal(USDG, trader, amt);
-        vm.startPrank(trader);
-        IERC20(USDG).approve(address(router), amt);
-        router.swapExactIn(USDG, AAPL, _legs1(0, amt), _guard(2000), 0, trader, block.timestamp + 300);
-        vm.stopPrank();
-        assertGe(IERC20(USDG).balanceOf(address(router)), stranded, "residue still trapped");
-    }
-
-    // ---------------------------------------------------------------- R-06 maker
-
-    function test_R06_makerShortFillStrandsTheResidue() public {
+    /// Same for a short-filling propAMM pair, which the IPropPair NatSpec says to expect.
+    function test_R06_makerShortFillRefundsTheResidue() public {
         uint256 amt = 1000e6;
         uint256 payout = (_oracleAapl(amt) * 9_900) / 10_000;
         deal(AAPL, address(pair), payout);
@@ -158,20 +140,53 @@ contract R06_RouterStranding is Test {
         );
         vm.stopPrank();
 
-        assertGt(out, 0, "maker leg reported a fill");
-        assertEq(IERC20(USDG).balanceOf(address(router)), 400e6, "40% of the order stranded");
-        assertEq(IERC20(USDG).balanceOf(trader), 0, "no refund");
+        assertGt(out, 0, "maker leg delivered");
+        assertEq(IERC20(USDG).balanceOf(address(router)), 0, "router must hold nothing");
+        assertEq(
+            IERC20(USDG).balanceOf(address(pair)) + IERC20(USDG).balanceOf(trader), amt,
+            "every wei accounted for"
+        );
+        assertGt(IERC20(USDG).balanceOf(trader), 0, "the part it declined comes back");
     }
 
-    // ---------------------------------------------------------------- R-07 / R-08
+    /// The guard is now evaluated on what was SPENT, not on what was offered.
+    ///
+    /// Uses the MAKER venue deliberately: the fallback loop skips maker legs, so a pair that takes
+    /// 60% leaves a full 40% unconsumed with nothing to re-route it into. That gap is far wider
+    /// than any permitted band, which is what makes this test discriminating — under the old
+    /// accounting the guard was handed the whole leg and the same honest fill looked 40% short, so
+    /// it failed at every band. A v3 venue would not prove it: the fallback re-routes most of the
+    /// shortfall and the residual gap (25 bps here) is smaller than the floor band.
+    function test_R06_guardSeesTheAmountActuallySpent() public {
+        uint256 amt = 1000e6;
+        uint256 consumed = (amt * 6_000) / 10_000;            // the pair takes 60%, no fallback
+        uint256 payout = (_oracleAapl(consumed) * 9_950) / 10_000;  // fair price for THAT 60%
+        deal(AAPL, address(pair), payout);
+        pair.setGive(payout);
 
-    /// The Merkle leaf commits token0 = USDG, but `uniswapV3SwapCallback` settles with
-    /// `IUniswapV3Pool(pool).token0()`, which this venue reports as AMZN. The router therefore
-    /// pays out a token the committed leaf never authorised.
-    function test_R07_callbackTrustsThePoolsSelfReportedTokensNotTheLeaf() public {
+        deal(USDG, trader, amt);
+        vm.startPrank(trader);
+        IERC20(USDG).approve(address(router), amt);
+        // 50 bps — the tightest band the library allows. Passes only because the basis is the
+        // 600 USDG actually spent rather than the 1000 USDG offered.
+        uint256 got = router.swapExactIn(
+            USDG, AAPL, _legs1(1, amt), _guard(50), 0, trader, block.timestamp + 300
+        );
+        vm.stopPrank();
+
+        assertEq(got, payout, "delivered the maker's fill");
+        assertEq(IERC20(USDG).balanceOf(address(pair)), consumed, "the pair took 60%");
+        assertEq(IERC20(USDG).balanceOf(trader), amt - consumed, "the other 40% came back");
+        assertEq(IERC20(USDG).balanceOf(address(router)), 0, "router must hold nothing");
+    }
+
+    // ---------------------------------------------------------------- R-07
+
+    /// The venue leaf commits token0 = USDG; this pool's code reports AMZN. The router must settle
+    /// in the committed token and must not touch an unrelated balance it happens to hold.
+    function test_R07_callbackSettlesInTheCommittedTokenNotThePoolsClaim() public {
         uint256 amt = 100e6;
-        // the router happens to hold AMZN (e.g. residue from an earlier short fill)
-        deal(AMZN, address(router), 5e18);
+        deal(AMZN, address(router), 5e18);          // residue from some earlier life
         deal(AAPL, address(liarPool), 1e18);
         liarPool.setGive(1e18);
 
@@ -181,44 +196,71 @@ contract R06_RouterStranding is Test {
         router.swapExactIn(USDG, AAPL, _legs1(2, amt), _guard(2000), 0, trader, block.timestamp + 300);
         vm.stopPrank();
 
-        assertEq(IERC20(AMZN).balanceOf(address(liarPool)), 100e6, "AMZN left on the pool's say-so");
-        assertEq(IERC20(USDG).balanceOf(address(router)), amt, "the committed token0 was never touched");
+        assertEq(IERC20(AMZN).balanceOf(address(liarPool)), 0, "AMZN must never leave on a pool's say-so");
+        assertEq(IERC20(AMZN).balanceOf(address(router)), 5e18, "the unrelated balance is untouched");
+        assertEq(IERC20(USDG).balanceOf(address(liarPool)), amt, "the committed token was paid");
     }
 
-    /// The callback honours whatever delta the pool reports. There is no check that it matches the
-    /// leg's amountIn, so one registered venue can consume the whole call's budget.
-    function test_R08_callbackHasNoPerLegBudget() public {
+    // ---------------------------------------------------------------- R-08
+
+    /// A single over-draw is refused, and the leg degrades to consuming nothing rather than
+    /// draining the call's balance.
+    function test_R08_singleOverdrawIsRefused() public {
         uint256 amt = 100e6;
-        deal(USDG, address(router), 900e6); // residue from earlier calls
+        deal(USDG, address(router), 900e6);        // residue a greedy pool would love
         deal(AAPL, address(pool), 1e18);
         pool.setGive(1e18);
-        pool.setOverdraw(1000e6); // asks for 10x the leg size
+        pool.setOverdraw(1000e6);                  // asks for 10x the leg
 
         deal(USDG, trader, amt);
         vm.startPrank(trader);
         IERC20(USDG).approve(address(router), amt);
+        vm.expectRevert(PartitioRouterV2.NothingRouted.selector);
         router.swapExactIn(USDG, AAPL, _legs1(0, amt), _guard(2000), 0, trader, block.timestamp + 300);
         vm.stopPrank();
 
-        assertEq(IERC20(USDG).balanceOf(address(pool)), 1000e6, "pool drew 10x the leg it was given");
-        assertEq(IERC20(USDG).balanceOf(address(router)), 0, "router emptied");
+        assertEq(IERC20(USDG).balanceOf(address(pool)), 0, "the greedy pool drew nothing");
+        assertEq(IERC20(USDG).balanceOf(address(router)), 900e6, "the unrelated residue is intact");
     }
 
-    // ---------------------------------------------------------------- helpers
+    /// THE CASE A PER-CALLBACK COMPARISON WOULD MISS: two callbacks in one swap, each asking for
+    /// the full leg. The budget decrements, so the second is refused and the leg rolls back.
+    function test_R08_repeatedCallbacksShareOneBudget() public {
+        uint256 amt = 100e6;
+        deal(USDG, address(router), 900e6);
+        deal(AAPL, address(greedy), 1e18);
+        greedy.setGive(1e18);
 
-    function _legFailedCount() internal returns (uint256 n) {
-        Vm.Log[] memory logs = vm.getRecordedLogs();
-        bytes32 sig = keccak256("LegFailed(address,uint256)");
-        for (uint256 i = 0; i < logs.length; i++) if (logs[i].topics[0] == sig) n++;
+        deal(USDG, trader, amt);
+        vm.startPrank(trader);
+        IERC20(USDG).approve(address(router), amt);
+        vm.expectRevert(PartitioRouterV2.NothingRouted.selector);
+        router.swapExactIn(USDG, AAPL, _legs1(3, amt), _guard(2000), 0, trader, block.timestamp + 300);
+        vm.stopPrank();
+
+        assertEq(IERC20(USDG).balanceOf(address(greedy)), 0, "double-dipping pool drew nothing");
+        assertEq(IERC20(USDG).balanceOf(address(router)), 900e6, "the unrelated residue is intact");
     }
 
-    function _hasSel(bytes memory code, bytes4 sel) internal pure returns (bool) {
-        for (uint256 i = 0; i + 4 <= code.length; i++) {
-            if (code[i] == sel[0] && code[i + 1] == sel[1] && code[i + 2] == sel[2] && code[i + 3] == sel[3]) {
-                return true;
+    /// The router still has no way to be swept, which is why holding nothing matters.
+    function test_routerStillHasNoAdminSurface() public view {
+        bytes memory code = address(router).code;
+        bytes4[4] memory forbidden = [
+            bytes4(keccak256("owner()")),
+            bytes4(keccak256("sweep(address)")),
+            bytes4(keccak256("rescue(address,uint256)")),
+            bytes4(keccak256("skim(address)"))
+        ];
+        for (uint256 f = 0; f < forbidden.length; f++) {
+            for (uint256 i = 0; i + 4 <= code.length; i++) {
+                if (
+                    code[i] == forbidden[f][0] && code[i + 1] == forbidden[f][1]
+                        && code[i + 2] == forbidden[f][2] && code[i + 3] == forbidden[f][3]
+                ) {
+                    revert("router exposes an admin selector");
+                }
             }
         }
-        return false;
     }
 }
 

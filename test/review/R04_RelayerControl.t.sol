@@ -7,150 +7,141 @@ import {OracleGuard} from "../../src/v2/OracleGuard.sol";
 import {PartitioRouterV2} from "../../src/v2/PartitioRouterV2.sol";
 import {IERC20} from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 
-/// R-04  MEDIUM  The amount actually routed is the relayer's choice, not the signer's.
-/// R-05  MEDIUM  `_legsFor` ignores the output index, so multi-output baskets cannot be filled.
+/// R-04 (was MEDIUM) — FIXED. R-05 (was MEDIUM) — REMOVED rather than fixed.
 ///
-/// `_viaRouter(tokenIn, out, legs, amountIn)` uses `amountIn` ONLY as the approval ceiling:
-///     IERC20(tokenIn).forceApprove(address(ROUTER), amountIn);
-///     ROUTER.swapExactIn(tokenIn, out.token, legs, out.guard, 0, address(this), block.timestamp);
-/// PartitioRouterV2 derives what it pulls from `sum(legs[i].amountIn)`, and `legs` lives in the
-/// relayer-supplied `Route`, which is not covered by the order signature. So `weightBps` and
-/// `amountIn` are upper bounds the relayer may under-shoot at will, and the signer's only real
-/// protection is `minOut`.
+/// R-04: `_viaRouter`'s `amountIn` was only an approval ceiling; the amount actually routed came
+/// from `route.legs`, which the order signature does not cover, so a relayer could charge the full
+/// fee while routing a sliver. The legs are now required to sum to exactly the spendable amount,
+/// checked on the RAW legs before `_scaleLegs` rewrites them — checking after would be a tautology,
+/// since `_scaleLegs` establishes that sum itself.
+///
+/// R-05: baskets are gone. `Order` carries one output. The old multi-output path could not be
+/// filled by any route, so there is nothing to fix and nothing to ship.
 contract R04_RelayerControl is ReviewBase {
     function setUp() public {
         _baseSetUp([KYBER_ROUTER, address(0), address(0), address(0)]);
     }
 
-    /// The relayer charges the full maxFee, routes 1 USDG of a 1000 USDG order, burns the order's
-    /// replay slot and the EIP-3009 authorization, and hands the rest back as "dust". The oracle
-    /// guard cannot see this: it is evaluated against what was routed, not against what was signed.
-    function test_R04_relayerKeepsMaxFeeWhileRoutingOneThousandthOfTheOrder() public {
+    /// The exact under-routing attack, now rejected before any money moves.
+    function test_R04_slimLegsAreRejected() public {
         uint256 amt = 1000e6;
         uint256 maxFee = 5e6;
         deal(USDG, user, amt);
-
         GaslessEntry.Order memory o = _buyOrder(amt, maxFee, 0, bytes32(uint256(21)));
         GaslessEntry.Auth memory a = _auth(o);
-        bytes32 oh = entry.hashOrder(o);
 
-        // legs sum to 1 USDG instead of the 995 USDG the order implies
-        uint256 routed = 1e6;
+        // legs summing to 1 USDG of a 1000 USDG order
+        GaslessEntry.Route memory r = _routerRoute(1e6);
         vm.prank(relayer);
-        uint256[] memory outs = entry.fill(o, a, _routerRoute(routed), maxFee);
+        vm.expectRevert(abi.encodeWithSelector(
+            GaslessEntry.LegsDoNotCoverOrder.selector, uint256(1e6), amt - maxFee));
+        entry.fill(o, a, r, maxFee);
 
-        console2.log("AAPL delivered (wei)      :", outs[0]);
-        console2.log("AAPL a full fill would buy:", _oracleAapl(amt - maxFee));
-        console2.log("relayer fee (USDG)        :", IERC20(USDG).balanceOf(relayer));
-        console2.log("returned to user (USDG)   :", IERC20(USDG).balanceOf(user));
+        // nothing moved, and the order is still fillable with an honest route
+        assertEq(IERC20(USDG).balanceOf(user), amt, "user lost funds on a rejected fill");
+        assertFalse(entry.executed(entry.hashOrder(o)), "order slot burned by a rejected fill");
 
-        // the guard passed: it only ever saw the 1 USDG that was actually routed
-        assertGt(outs[0], 0, "the routed sliver did fill");
-        assertLt(outs[0], _oracleAapl(amt - maxFee) / 100, "but it is under 1% of the signed order");
-        assertEq(IERC20(USDG).balanceOf(relayer), maxFee, "relayer took the whole fee");
-        assertEq(IERC20(USDG).balanceOf(user), amt - maxFee - routed, "the rest came back untouched");
-        // the user paid 5 USDG in fees to buy 1 USDG of stock
-        assertGt(maxFee, routed, "fee exceeds the value actually transacted");
-        assertTrue(entry.executed(oh), "order slot consumed");
-        // The same signature can never be used again: the user must sign a fresh order and pay
-        // another fee.
         vm.prank(relayer);
-        vm.expectRevert(abi.encodeWithSelector(GaslessEntry.AlreadyExecuted.selector, oh));
-        entry.fill(o, a, _routerRoute(routed), maxFee);
+        uint256 got = entry.fill(o, a, _routerRoute(amt - maxFee), maxFee);
+        assertGt(got, _oracleAapl(amt - maxFee) * 90 / 100, "honest route should fill near the oracle");
     }
 
-    // ------------------------------------------------------------------ R-05 baskets
-
-    function _basketOrder(bytes32 salt) internal view returns (GaslessEntry.Order memory o) {
-        GaslessEntry.Output[] memory outs = new GaslessEntry.Output[](2);
-        outs[0] = GaslessEntry.Output({
-            token: AAPL,
-            weightBps: 5_000,
-            minOut: 0,
-            guard: OracleGuard.Params({feed: AAPL_FEED, stockIsInput: false, maxDevBps: 2000})
-        });
-        outs[1] = GaslessEntry.Output({
-            token: AMZN,
-            weightBps: 5_000,
-            minOut: 0,
-            guard: OracleGuard.Params({feed: AMZN_FEED, stockIsInput: false, maxDevBps: 2000})
-        });
-        o = GaslessEntry.Order({
-            owner: user,
-            tokenIn: USDG,
-            amountIn: 1000e6,
-            maxFee: 5e6,
-            deadline: block.timestamp + 600,
-            salt: salt,
-            outputs: outs
-        });
-    }
-
-    /// Route candidate 1: legs for both stocks. Output 0 is priced against the AAPL feed but the
-    /// router also spends on the AMZN leg, so the AAPL output is about half what the guard demands.
-    function test_R05_basketUnfillable_bothLegs() public {
-        deal(USDG, user, 1000e6);
-        GaslessEntry.Order memory o = _basketOrder(bytes32(uint256(22)));
+    /// Over-routing is refused symmetrically: the relayer cannot route the fee reserve either.
+    function test_R04_fatLegsAreRejected() public {
+        uint256 amt = 1000e6;
+        uint256 fee = 5e6;
+        deal(USDG, user, amt);
+        GaslessEntry.Order memory o = _buyOrder(amt, fee, 0, bytes32(uint256(22)));
         GaslessEntry.Auth memory a = _auth(o);
+        GaslessEntry.Route memory r = _routerRoute(amt);   // the gross, not the spendable
+        vm.prank(relayer);
+        vm.expectRevert(abi.encodeWithSelector(
+            GaslessEntry.LegsDoNotCoverOrder.selector, amt, amt - fee));
+        entry.fill(o, a, r, fee);
+    }
+
+    /// The relayer can still choose the SPLIT, just not the total. Two venues, same total.
+    function test_R04_relayerStillChoosesTheSplitNotTheTotal() public {
+        uint256 amt = 1000e6;
+        uint256 fee = 1e6;
+        uint256 spendable = amt - fee;
+        deal(USDG, user, amt);
+        GaslessEntry.Order memory o = _buyOrder(amt, 5e6, 0, bytes32(uint256(23)));
 
         PartitioRouterV2.Leg[] memory legs = new PartitioRouterV2.Leg[](2);
-        legs[0] = _leg(0, 248e6); // AAPL/USDG
-        legs[1] = _leg(2, 248e6); // AMZN/USDG
+        legs[0] = _leg(0, spendable / 3);
+        legs[1] = _leg(1, spendable - spendable / 3);
         GaslessEntry.Route memory r =
             GaslessEntry.Route({aggregator: address(0), callData: "", aggMinOut: 0, legs: legs});
 
         vm.prank(relayer);
-        vm.expectRevert(); // OracleGuard.BelowOracleFloor on output 0
-        entry.fill(o, a, r, 1e6);
+        uint256 got = entry.fill(o, _auth(o), r, fee);
+        assertGt(got, 0, "two-venue split should fill");
+        assertEq(IERC20(AAPL).balanceOf(user), got);
     }
 
-    /// Route candidate 2: legs for one stock only. Output 1 is then measured in AMZN while the
-    /// router bought AAPL, so the AMZN balance delta is zero.
-    function test_R05_basketUnfillable_singleLegSet() public {
-        deal(USDG, user, 1000e6);
-        GaslessEntry.Order memory o = _basketOrder(bytes32(uint256(23)));
-        GaslessEntry.Auth memory a = _auth(o);
+    // ---------------------------------------------------------------- R-05
 
-        GaslessEntry.Route memory r = _routerRoute(497e6);
-        vm.prank(relayer);
-        vm.expectRevert(); // BelowOracleFloor on output 1 (zero AMZN out)
-        entry.fill(o, a, r, 1e6);
+    /// The basket path is gone from the type system: `Order` has one `tokenOut`, and the symbols
+    /// that made a basket expressible no longer exist in the ABI.
+    function test_R05_basketSurfaceIsGone() public view {
+        bytes memory code = address(entry).code;
+        bytes4[3] memory gone = [
+            bytes4(keccak256("BadWeights(uint256)")),
+            bytes4(keccak256("TooManyOutputs(uint256)")),
+            bytes4(keccak256("MAX_OUTPUTS()"))
+        ];
+        for (uint256 g = 0; g < gone.length; g++) {
+            for (uint256 i = 0; i + 4 <= code.length; i++) {
+                if (
+                    code[i] == gone[g][0] && code[i + 1] == gone[g][1] && code[i + 2] == gone[g][2]
+                        && code[i + 3] == gone[g][3]
+                ) {
+                    revert("a basket-path selector is still in the bytecode");
+                }
+            }
+        }
     }
 
-    /// Route candidate 3: no legs at all. The router refuses an empty split.
-    function test_R05_basketUnfillable_noLegs() public {
-        deal(USDG, user, 1000e6);
-        GaslessEntry.Order memory o = _basketOrder(bytes32(uint256(24)));
-        GaslessEntry.Auth memory a = _auth(o);
-
-        GaslessEntry.Route memory r = GaslessEntry.Route({
-            aggregator: address(0),
-            callData: "",
-            aggMinOut: 0,
-            legs: new PartitioRouterV2.Leg[](0)
-        });
+    /// Both stocks still fill individually — R-05 removed the unfillable branch, not the coverage.
+    function test_R05_eachStockStillFillsOnItsOwn() public {
+        uint256 fee = 1e6;
+        deal(USDG, user, 500e6);
+        GaslessEntry.Order memory o1 = _buyOrder(500e6, 5e6, 0, bytes32(uint256(25)));
         vm.prank(relayer);
-        vm.expectRevert(PartitioRouterV2.NothingRouted.selector);
-        entry.fill(o, a, r, 1e6);
-    }
-
-    /// Positive control: the identical two stocks CAN each be bought on their own, so the failure
-    /// above is `_legsFor` discarding the index, not a bad venue or a bad feed.
-    function test_R05_control_eachStockFillsOnItsOwn() public {
-        deal(USDG, user, 1000e6);
-        GaslessEntry.Order memory o1 = _buyOrder(500e6, 1e6, 0, bytes32(uint256(25)));
-        vm.prank(relayer);
-        uint256[] memory a1 = entry.fill(o1, _auth(o1), _routerRoute(499e6), 1e6);
-        assertGt(a1[0], 0, "AAPL alone fills");
+        assertGt(entry.fill(o1, _auth(o1), _routerRoute(500e6 - fee), fee), 0, "AAPL alone fills");
 
         deal(USDG, user, 500e6);
-        GaslessEntry.Order memory o2 = _buyOrder(500e6, 1e6, 0, bytes32(uint256(26)));
-        o2.outputs[0].token = AMZN;
-        o2.outputs[0].guard = OracleGuard.Params({feed: AMZN_FEED, stockIsInput: false, maxDevBps: 2000});
-        GaslessEntry.Route memory r2 =
-            GaslessEntry.Route({aggregator: address(0), callData: "", aggMinOut: 0, legs: _legs1(2, 499e6)});
+        GaslessEntry.Order memory o2 = _buyOrder(500e6, 5e6, 0, bytes32(uint256(26)));
+        o2.tokenOut = AMZN;
+        GaslessEntry.Route memory r2 = GaslessEntry.Route({
+            aggregator: address(0), callData: "", aggMinOut: 0, legs: _legs1(2, 500e6 - fee)
+        });
         vm.prank(relayer);
-        uint256[] memory a2 = entry.fill(o2, _auth(o2), r2, 1e6);
-        assertGt(a2[0], 0, "AMZN alone fills");
+        assertGt(entry.fill(o2, _auth(o2), r2, fee), 0, "AMZN alone fills");
+    }
+
+    /// NEW (audit finding `router-tokenout-unchecked`): a leg pointing at a correctly-committed
+    /// pool for a DIFFERENT quote asset used to pass the proof and the tokenIn check, spend real
+    /// input and strand a third token the output delta never counted. Now it reverts.
+    function test_routerRejectsALegForTheWrongPair() public {
+        uint256 amt = 1000e6;
+        uint256 fee = 1e6;
+        uint256 spendable = amt - fee;
+        deal(USDG, user, amt);
+        GaslessEntry.Order memory o = _buyOrder(amt, 5e6, 0, bytes32(uint256(27)));
+
+        PartitioRouterV2.Leg[] memory legs = new PartitioRouterV2.Leg[](2);
+        legs[0] = _leg(0, spendable - 100e6);   // USDG/AAPL - correct
+        legs[1] = _leg(2, 100e6);               // USDG/AMZN - committed, but the wrong pair
+        GaslessEntry.Route memory r =
+            GaslessEntry.Route({aggregator: address(0), callData: "", aggMinOut: 0, legs: legs});
+        // hoisted: _auth makes an external call, which would otherwise consume the expectRevert
+        GaslessEntry.Auth memory a = _auth(o);
+
+        vm.prank(relayer);
+        vm.expectRevert(PartitioRouterV2.TokenNotInVenue.selector);
+        entry.fill(o, a, r, fee);
+        assertEq(IERC20(AMZN).balanceOf(address(router)), 0, "no AMZN should ever have been bought");
     }
 }

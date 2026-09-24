@@ -32,15 +32,17 @@ contract OracleGuardAgeTest is Test {
     }
 
     function _p(uint256 bps) internal view returns (OracleGuard.Params memory) {
-        return OracleGuard.Params({feed: address(feed), stockIsInput: true, maxDevBps: bps});
+        return OracleGuard.Params({maxDevBps: bps});
     }
 
     /// Helper so the library's internal functions are reachable from the test.
-    function oracleOut(OracleGuard.Params memory p, uint256 amt, uint8 di, uint8 dou)
-        external view returns (uint256 o, uint256 u) { return OracleGuard.oracleOut(p, amt, di, dou); }
+    function oracleOut(address f, bool stockIsInput, uint256 amt, uint8 di, uint8 dou)
+        external view returns (uint256 o, uint256 u) {
+        return OracleGuard.oracleOut(f, stockIsInput, amt, di, dou);
+    }
 
     function test_freshFeedIsAccepted() public {
-        (uint256 out, uint256 upd) = this.oracleOut(_p(100), 1e18, 18, 6);
+        (uint256 out, uint256 upd) = this.oracleOut(address(feed), true, 1e18, 18, 6);
         console2.log("fresh: 1 token ->", out, "USDG(6dp), updatedAt", upd);
         assertEq(out, 336_000000, "expected 336.000000 USDG for 1 token at $336");
     }
@@ -48,13 +50,13 @@ contract OracleGuardAgeTest is Test {
     /// 87.4h is the measured maximum real gap. It must still be accepted.
     function test_measuredMaximumGapIsAccepted() public {
         feed.set(336_00000000, block.timestamp - 87 hours - 24 minutes);
-        (uint256 out,) = this.oracleOut(_p(100), 1e18, 18, 6);
+        (uint256 out,) = this.oracleOut(address(feed), true, 1e18, 18, 6);
         assertEq(out, 336_000000, "the measured worst-case real gap must not be rejected");
     }
 
     function test_119hIsAccepted() public {
         feed.set(336_00000000, block.timestamp - 119 hours);
-        (uint256 out,) = this.oracleOut(_p(100), 1e18, 18, 6);
+        (uint256 out,) = this.oracleOut(address(feed), true, 1e18, 18, 6);
         assertEq(out, 336_000000);
     }
 
@@ -64,26 +66,25 @@ contract OracleGuardAgeTest is Test {
         feed.set(336_00000000, upd);
         vm.expectRevert(abi.encodeWithSelector(
             OracleGuard.FeedDead.selector, upd, 121 hours, 120 hours));
-        this.oracleOut(_p(100), 1e18, 18, 6);
+        this.oracleOut(address(feed), true, 1e18, 18, 6);
     }
 
     function test_zeroAnswerRejected() public {
         feed.set(0, block.timestamp);
         vm.expectRevert(abi.encodeWithSelector(OracleGuard.FeedBadAnswer.selector, int256(0)));
-        this.oracleOut(_p(100), 1e18, 18, 6);
+        this.oracleOut(address(feed), true, 1e18, 18, 6);
     }
 
     function test_neverUpdatedRejected() public {
         feed.set(336_00000000, 0);
         vm.expectRevert(OracleGuard.FeedNeverUpdated.selector);
-        this.oracleOut(_p(100), 1e18, 18, 6);
+        this.oracleOut(address(feed), true, 1e18, 18, 6);
     }
 
     /// Buying direction: USDG in, stock out.
     function test_buyDirectionScaling() public {
-        OracleGuard.Params memory p =
-            OracleGuard.Params({feed: address(feed), stockIsInput: false, maxDevBps: 100});
-        (uint256 out,) = this.oracleOut(p, 336_000000, 6, 18);
+        // stockIsInput = false: USDG in, stock out
+        (uint256 out,) = this.oracleOut(address(feed), false, 336_000000, 6, 18);
         console2.log("336 USDG ->", out, "stock wei");
         assertApproxEqRel(out, 1e18, 1e12, "336 USDG should buy ~1 token at $336");
     }

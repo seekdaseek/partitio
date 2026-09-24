@@ -15,7 +15,38 @@ contract FuzzToken {
     event Transfer(address indexed from, address indexed to, uint256 v);
     event Approval(address indexed o, address indexed s, uint256 v);
 
-    constructor(string memory n, uint8 d) { name = n; decimals = d; }
+    bytes32 public immutable DOMAIN_SEPARATOR;
+    bytes32 public constant PERMIT_TYPEHASH =
+        keccak256("Permit(address owner,address spender,uint256 value,uint256 nonce,uint256 deadline)");
+    mapping(address => uint256) public nonces;
+
+    error PermitExpired();
+    error BadPermit();
+
+    constructor(string memory n, uint8 d) {
+        name = n;
+        decimals = d;
+        DOMAIN_SEPARATOR = keccak256(
+            abi.encode(
+                keccak256("EIP712Domain(string name,string version,uint256 chainId,address verifyingContract)"),
+                keccak256(bytes(n)), keccak256("1"), block.chainid, address(this)
+            )
+        );
+    }
+
+    function permit(address owner, address spender, uint256 value, uint256 deadline,
+                    uint8 v, bytes32 r, bytes32 s) external {
+        if (block.timestamp > deadline) revert PermitExpired();
+        bytes32 digest = keccak256(
+            abi.encodePacked(
+                "\x19\x01", DOMAIN_SEPARATOR,
+                keccak256(abi.encode(PERMIT_TYPEHASH, owner, spender, value, nonces[owner]++, deadline))
+            )
+        );
+        if (ecrecover(digest, v, r, s) != owner || owner == address(0)) revert BadPermit();
+        allowance[owner][spender] = value;
+        emit Approval(owner, spender, value);
+    }
 
     function mint(address to, uint256 v) public { balanceOf[to] += v; totalSupply += v; emit Transfer(address(0), to, v); }
     function approve(address s, uint256 v) public returns (bool) { allowance[msg.sender][s] = v; emit Approval(msg.sender, s, v); return true; }
@@ -39,7 +70,8 @@ contract FuzzToken {
 
 /// EIP-3009 receiveWithAuthorization, payee-bound and nonce-bound, as USDG behaves on 4663.
 contract FuzzUSDG is FuzzToken {
-    bytes32 public immutable DOMAIN_SEPARATOR;
+    // DOMAIN_SEPARATOR is inherited: FuzzToken already builds it from (name, "1", chainid, this),
+    // which is byte-identical to what this contract used to compute for itself.
     bytes32 constant RECEIVE_TYPEHASH = keccak256(
         "ReceiveWithAuthorization(address from,address to,uint256 value,uint256 validAfter,uint256 validBefore,bytes32 nonce)"
     );
@@ -49,14 +81,7 @@ contract FuzzUSDG is FuzzToken {
     error AuthorizationUsed();
     error BadAuthSignature();
 
-    constructor() FuzzToken("USDG", 6) {
-        DOMAIN_SEPARATOR = keccak256(
-            abi.encode(
-                keccak256("EIP712Domain(string name,string version,uint256 chainId,address verifyingContract)"),
-                keccak256("USDG"), keccak256("1"), block.chainid, address(this)
-            )
-        );
-    }
+    constructor() FuzzToken("USDG", 6) {}
 
     function receiveWithAuthorization(
         address from, address to, uint256 value,

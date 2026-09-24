@@ -38,36 +38,24 @@ contract R11_Signature is ReviewBase {
     function test_clean_eip712DigestMatchesAnIndependentImplementation() public view {
         GaslessEntry.Order memory o = _buyOrder(1000e6, 5e6, 1e18, bytes32(uint256(0xC0FFEE)));
 
-        bytes32 guardTypehash = keccak256("Guard(address feed,bool stockIsInput,uint256 maxDevBps)");
-        bytes32 outputTypehash = keccak256(
-            "Output(address token,uint16 weightBps,uint256 minOut,Guard guard)Guard(address feed,bool stockIsInput,uint256 maxDevBps)"
-        );
+        // Built by hand from the EIP-712 spec: referenced struct types appended in ALPHABETICAL
+        // order, each atomic field encoded to 32 bytes. One referenced type now, because Output is
+        // gone (R-05) and Guard carries only the band (R-09).
+        bytes32 guardTypehash = keccak256("Guard(uint256 maxDevBps)");
         bytes32 orderTypehash = keccak256(
-            "Order(address owner,address tokenIn,uint256 amountIn,uint256 maxFee,uint256 deadline,bytes32 salt,Output[] outputs)Guard(address feed,bool stockIsInput,uint256 maxDevBps)Output(address token,uint16 weightBps,uint256 minOut,Guard guard)"
+            "Order(address owner,address tokenIn,uint256 amountIn,address tokenOut,uint256 minOut,uint256 maxFeeUsdg,uint256 deadline,bytes32 salt,Guard guard)Guard(uint256 maxDevBps)"
         );
-
-        bytes32[] memory outH = new bytes32[](o.outputs.length);
-        for (uint256 i = 0; i < o.outputs.length; i++) {
-            bytes32 gh = keccak256(
-                abi.encode(
-                    guardTypehash, o.outputs[i].guard.feed, o.outputs[i].guard.stockIsInput,
-                    o.outputs[i].guard.maxDevBps
-                )
-            );
-            outH[i] = keccak256(
-                abi.encode(outputTypehash, o.outputs[i].token, o.outputs[i].weightBps, o.outputs[i].minOut, gh)
-            );
-        }
+        bytes32 gh = keccak256(abi.encode(guardTypehash, o.guard.maxDevBps));
         bytes32 structHash = keccak256(
             abi.encode(
-                orderTypehash, o.owner, o.tokenIn, o.amountIn, o.maxFee, o.deadline, o.salt,
-                keccak256(abi.encodePacked(outH))
+                orderTypehash, o.owner, o.tokenIn, o.amountIn, o.tokenOut, o.minOut,
+                o.maxFeeUsdg, o.deadline, o.salt, gh
             )
         );
         bytes32 ds = keccak256(
             abi.encode(
                 keccak256("EIP712Domain(string name,string version,uint256 chainId,address verifyingContract)"),
-                keccak256("partitio"), keccak256("2"), block.chainid, address(entry)
+                keccak256("partitio"), keccak256("3"), block.chainid, address(entry)
             )
         );
         assertEq(entry.hashOrder(o), keccak256(abi.encodePacked("\x19\x01", ds, structHash)));
@@ -111,15 +99,11 @@ contract R11_Signature is ReviewBase {
         m = _buyOrder(1000e6, 5e6, 1e18, bytes32(uint256(3)));
         m.deadline += 1;                assertTrue(entry.hashOrder(m) != h, "deadline");
         m = _buyOrder(1000e6, 5e6, 1e18, bytes32(uint256(3)));
-        m.outputs[0].token = AMZN;      assertTrue(entry.hashOrder(m) != h, "output token");
+        m.tokenOut = AMZN;              assertTrue(entry.hashOrder(m) != h, "tokenOut");
         m = _buyOrder(1000e6, 5e6, 1e18, bytes32(uint256(3)));
-        m.outputs[0].weightBps = 9_999; assertTrue(entry.hashOrder(m) != h, "weightBps");
-        m = _buyOrder(1000e6, 5e6, 1e18, bytes32(uint256(3)));
-        m.outputs[0].guard.feed = AMZN_FEED;      assertTrue(entry.hashOrder(m) != h, "guard.feed");
-        m = _buyOrder(1000e6, 5e6, 1e18, bytes32(uint256(3)));
-        m.outputs[0].guard.stockIsInput = true;   assertTrue(entry.hashOrder(m) != h, "guard.stockIsInput");
-        m = _buyOrder(1000e6, 5e6, 1e18, bytes32(uint256(3)));
-        m.outputs[0].guard.maxDevBps = 301;       assertTrue(entry.hashOrder(m) != h, "guard.maxDevBps");
+        m.guard.maxDevBps = 301;        assertTrue(entry.hashOrder(m) != h, "guard.maxDevBps");
+        // `feed` and `stockIsInput` are deliberately NOT here any more: they are no longer signed
+        // because they are no longer the signer's to choose (R-09). The router derives both.
     }
 
     /// A malleated (s, v) pair is rejected outright by OpenZeppelin's ECDSA, so it cannot even be
@@ -165,16 +149,11 @@ contract R11_Signature is ReviewBase {
     // ---------------------------------------------------------------- R-12 permit path
 
     function _sellOrder(uint256 amountIn, bytes32 salt) internal view returns (GaslessEntry.Order memory o) {
-        GaslessEntry.Output[] memory outs = new GaslessEntry.Output[](1);
-        outs[0] = GaslessEntry.Output({
-            token: USDG,
-            weightBps: 10_000,
-            minOut: 0,
-            guard: OracleGuard.Params({feed: AAPL_FEED, stockIsInput: true, maxDevBps: 500})
-        });
         o = GaslessEntry.Order({
-            owner: user, tokenIn: AAPL, amountIn: amountIn, maxFee: 1e6,   // USDG, not AAPL
-            deadline: block.timestamp + 600, salt: salt, outputs: outs
+            owner: user, tokenIn: AAPL, amountIn: amountIn, tokenOut: USDG, minOut: 0,
+            maxFeeUsdg: 1e6,                       // the name now carries the denomination
+            deadline: block.timestamp + 600, salt: salt,
+            guard: OracleGuard.Params({maxDevBps: 500})
         });
     }
 
@@ -197,10 +176,10 @@ contract R11_Signature is ReviewBase {
         uint256 n = IPermitToken(AAPL).nonces(user);
         GaslessEntry.Order memory o = _sellOrder(1e18, bytes32(uint256(20)));
         GaslessEntry.Route memory r =
-            GaslessEntry.Route({aggregator: address(0), callData: "", aggMinOut: 0, legs: _legs1(0, 1e18 - 1e15)});
+            GaslessEntry.Route({aggregator: address(0), callData: "", aggMinOut: 0, legs: _legs1(0, 1e18)});
         vm.prank(relayer);
-        uint256[] memory outs = entry.fill(o, _sellAuth(o, n), r, 1e6);
-        assertGt(outs[0], 0, "sell should fill");
+        uint256 outs0 = entry.fill(o, _sellAuth(o, n), r, 1e6);
+        assertGt(outs0, 0, "sell should fill");
     }
 
     /// Two outstanding sell orders. ERC20Permit nonces are strictly sequential, so whichever order
@@ -215,7 +194,7 @@ contract R11_Signature is ReviewBase {
         GaslessEntry.Auth memory aA = _sellAuth(oA, n);       // permit nonce n
         GaslessEntry.Auth memory aB = _sellAuth(oB, n + 1);   // permit nonce n+1
         GaslessEntry.Route memory r =
-            GaslessEntry.Route({aggregator: address(0), callData: "", aggMinOut: 0, legs: _legs1(0, 1e18 - 1e15)});
+            GaslessEntry.Route({aggregator: address(0), callData: "", aggMinOut: 0, legs: _legs1(0, 1e18)});
 
         // the relayer fills B first - a free choice, nothing in either order forbids it
         vm.prank(relayer);
@@ -224,12 +203,12 @@ contract R11_Signature is ReviewBase {
 
         // and A still works, which pins the cause on ordering rather than on order B being invalid
         vm.prank(relayer);
-        uint256[] memory outs = entry.fill(oA, aA, r, 1e6);
-        assertGt(outs[0], 0, "order A fills once it is first");
+        uint256 outs0 = entry.fill(oA, aA, r, 1e6);
+        assertGt(outs0, 0, "order A fills once it is first");
 
         // now B fills too, because its nonce finally came up
         vm.prank(relayer);
-        uint256[] memory outsB = entry.fill(oB, aB, r, 1e6);
-        assertGt(outsB[0], 0, "B fills second");
+        uint256 outsB0 = entry.fill(oB, aB, r, 1e6);
+        assertGt(outsB0, 0, "B fills second");
     }
 }

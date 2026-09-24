@@ -13,8 +13,8 @@ interface IUSDGDomain {
     function DOMAIN_SEPARATOR() external view returns (bytes32);
 }
 
-/// @notice Shared fork fixture for the independent review. Mirrors test/GaslessEntry.t.sol's
-/// setup exactly so a finding cannot be waved away as "your harness is different".
+/// @notice Shared fork fixture for the independent review's tests. Mirrors test/GaslessEntry.t.sol
+/// so a finding cannot be waved away as "your harness is different".
 abstract contract ReviewBase is Test {
     address constant PM = 0x8366a39CC670B4001A1121B8F6A443A643e40951;
     address constant AAPL = 0xaF3D76f1834A1d425780943C99Ea8A608f8a93f9;
@@ -48,8 +48,20 @@ abstract contract ReviewBase is Test {
     function _baseSetUp(address[4] memory aggs) internal {
         user = vm.addr(userPk);
         _buildVenues();
-        router = new PartitioRouterV2(IPoolManager(PM), root);
+        router = new PartitioRouterV2(IPoolManager(PM), root, _stockTokens(), _feeds());
         entry = new GaslessEntry(IUSDG(USDG), router, aggs);
+    }
+
+    function _stockTokens() internal pure returns (address[] memory t) {
+        t = new address[](2);
+        t[0] = AAPL;
+        t[1] = AMZN;
+    }
+
+    function _feeds() internal pure returns (address[] memory f) {
+        f = new address[](2);
+        f[0] = AAPL_FEED;
+        f[1] = AMZN_FEED;
     }
 
     /// 4 leaves: AAPL pool A, AAPL pool B, AMZN pool, and a placeholder v4 key.
@@ -93,26 +105,21 @@ abstract contract ReviewBase is Test {
 
     // ------------------------------------------------------------------ orders
 
-    function _buyOrder(uint256 amountIn, uint256 maxFee, uint256 minOut, bytes32 salt)
+    function _buyOrder(uint256 amountIn, uint256 maxFeeUsdg, uint256 minOut, bytes32 salt)
         internal
         view
         returns (GaslessEntry.Order memory o)
     {
-        GaslessEntry.Output[] memory outs = new GaslessEntry.Output[](1);
-        outs[0] = GaslessEntry.Output({
-            token: AAPL,
-            weightBps: 10_000,
-            minOut: minOut,
-            guard: OracleGuard.Params({feed: AAPL_FEED, stockIsInput: false, maxDevBps: 300})
-        });
         o = GaslessEntry.Order({
             owner: user,
             tokenIn: USDG,
             amountIn: amountIn,
-            maxFee: maxFee,
+            tokenOut: AAPL,
+            minOut: minOut,
+            maxFeeUsdg: maxFeeUsdg,
             deadline: block.timestamp + 600,
             salt: salt,
-            outputs: outs
+            guard: OracleGuard.Params({maxDevBps: 300})
         });
     }
 
@@ -127,8 +134,11 @@ abstract contract ReviewBase is Test {
         a = GaslessEntry.Auth({v: v, r: r, s: s, pv: pv, pr: pr, ps: ps, validAfter: 0, validBefore: o.deadline});
     }
 
-    function _routerRoute(uint256 amt) internal view returns (GaslessEntry.Route memory) {
-        return GaslessEntry.Route({aggregator: address(0), callData: "", aggMinOut: 0, legs: _legs1(0, amt)});
+    /// @dev Legs must sum to exactly the spendable amount since R-04, so routes are built from it.
+    function _routerRoute(uint256 spendable) internal view returns (GaslessEntry.Route memory) {
+        return GaslessEntry.Route({
+            aggregator: address(0), callData: "", aggMinOut: 0, legs: _legs1(0, spendable)
+        });
     }
 
     /// What the Chainlink feed says `amountIn` USDG is worth in AAPL, ignoring any band.

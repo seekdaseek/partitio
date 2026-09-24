@@ -67,7 +67,11 @@ contract GaslessSellTest is Test {
         for (uint256 i = 0; i < venues.length; i++)
             leaves.push(keccak256(bytes.concat(keccak256(abi.encode(venues[i])))));
         root = _pair(leaves[0], leaves[1]);
-        router = new PartitioRouterV2(IPoolManager(PM), root);
+        address[] memory toks = new address[](1);
+        address[] memory fds = new address[](1);
+        toks[0] = AAPL;
+        fds[0] = AAPL_FEED;
+        router = new PartitioRouterV2(IPoolManager(PM), root, toks, fds);
         entry = new GaslessEntry(IUSDG(USDG), router, [address(0), address(0), address(0), address(0)]);
     }
 
@@ -85,13 +89,10 @@ contract GaslessSellTest is Test {
     function _sellOrder(uint256 amountIn, uint256 maxFee, uint256 minOut, bytes32 salt)
         internal view returns (GaslessEntry.Order memory o)
     {
-        GaslessEntry.Output[] memory outs = new GaslessEntry.Output[](1);
-        outs[0] = GaslessEntry.Output({
-            token: USDG, weightBps: 10_000, minOut: minOut,
-            guard: OracleGuard.Params({feed: AAPL_FEED, stockIsInput: true, maxDevBps: 300})
-        });
-        o = GaslessEntry.Order({owner: user, tokenIn: AAPL, amountIn: amountIn,
-            maxFee: maxFee, deadline: block.timestamp + 600, salt: salt, outputs: outs});
+        o = GaslessEntry.Order({
+            owner: user, tokenIn: AAPL, amountIn: amountIn, tokenOut: USDG, minOut: minOut,
+            maxFeeUsdg: maxFee, deadline: block.timestamp + 600, salt: salt,
+            guard: OracleGuard.Params({maxDevBps: 300})});
     }
 
     function _sellAuth(GaslessEntry.Order memory o) internal view returns (GaslessEntry.Auth memory a) {
@@ -121,11 +122,11 @@ contract GaslessSellTest is Test {
 
         uint256 relayerBefore = IERC20(USDG).balanceOf(relayer);
         vm.prank(relayer);
-        uint256[] memory outs = entry.fill(o, a, _route(amt), fee);
+        uint256 outs0 = entry.fill(o, a, _route(amt), fee);
 
-        console2.log("net USDG to user:", outs[0]);
-        assertGt(outs[0], 0, "no USDG delivered");
-        assertEq(IERC20(USDG).balanceOf(user), outs[0], "user did not receive the net amount");
+        console2.log("net USDG to user:", outs0);
+        assertGt(outs0, 0, "no USDG delivered");
+        assertEq(IERC20(USDG).balanceOf(user), outs0, "user did not receive the net amount");
         assertEq(IERC20(USDG).balanceOf(relayer) - relayerBefore, fee, "fee not paid in USDG");
         assertEq(user.balance, 0, "user needed ETH");
         assertEq(IERC20(AAPL).balanceOf(address(entry)), 0);
@@ -141,7 +142,7 @@ contract GaslessSellTest is Test {
         uint256 snap = vm.snapshotState();
         GaslessEntry.Order memory probe = _sellOrder(amt, 5e6, 0, bytes32(uint256(21)));
         vm.prank(relayer);
-        uint256 gross = entry.fill(probe, _sellAuth(probe), _route(amt), 0)[0];
+        uint256 gross = entry.fill(probe, _sellAuth(probe), _route(amt), 0);
         vm.revertToState(snap);
 
         // now demand exactly the gross while a fee is charged: net < minOut, must revert
@@ -168,9 +169,9 @@ contract GaslessSellTest is Test {
         assertEq(IERC20(AAPL).allowance(user, address(entry)), amt, "allowance not set by the front-run");
 
         vm.prank(relayer);
-        uint256[] memory outs = entry.fill(o, a, _route(amt), 1e6);
-        console2.log("filled after front-run, net USDG:", outs[0]);
-        assertGt(outs[0], 0, "front-run bricked the order");
+        uint256 outs0 = entry.fill(o, a, _route(amt), 1e6);
+        console2.log("filled after front-run, net USDG:", outs0);
+        assertGt(outs0, 0, "front-run bricked the order");
     }
 }
 
@@ -210,7 +211,11 @@ contract AggregatorFallbackTest is Test {
         bytes32 a0 = leaves[0]; bytes32 a1 = leaves[1];
         root = a0 <= a1 ? keccak256(abi.encode(a0, a1)) : keccak256(abi.encode(a1, a0));
 
-        router = new PartitioRouterV2(IPoolManager(PM), root);
+        address[] memory toks = new address[](1);
+        address[] memory fds = new address[](1);
+        toks[0] = AAPL;
+        fds[0] = AAPL_FEED;
+        router = new PartitioRouterV2(IPoolManager(PM), root, toks, fds);
         // a stale route: hands back 0.5 AAPL for whatever it is given, and returns the rest
         agg = new UnderDeliveringAggregator(USDG, AAPL, 0.5e18);
         deal(AAPL, address(agg), 10e18);
@@ -221,12 +226,10 @@ contract AggregatorFallbackTest is Test {
         uint256 amt = 1000e6;
         deal(USDG, user, amt);
 
-        GaslessEntry.Output[] memory outs = new GaslessEntry.Output[](1);
-        outs[0] = GaslessEntry.Output({token: AAPL, weightBps: 10_000, minOut: 0,
-            guard: OracleGuard.Params({feed: AAPL_FEED, stockIsInput: false, maxDevBps: 300})});
-        GaslessEntry.Order memory o = GaslessEntry.Order({owner: user, tokenIn: USDG,
-            amountIn: amt, maxFee: 5e6, deadline: block.timestamp + 600,
-            salt: bytes32(uint256(30)), outputs: outs});
+        GaslessEntry.Order memory o = GaslessEntry.Order({
+            owner: user, tokenIn: USDG, amountIn: amt, tokenOut: AAPL, minOut: 0,
+            maxFeeUsdg: 5e6, deadline: block.timestamp + 600, salt: bytes32(uint256(30)),
+            guard: OracleGuard.Params({maxDevBps: 300})});
 
         bytes32 oh = entry.hashOrder(o);
         (uint8 v, bytes32 r, bytes32 s) = vm.sign(userPk, oh);
@@ -247,13 +250,13 @@ contract AggregatorFallbackTest is Test {
         });
 
         vm.prank(relayer);
-        uint256[] memory got = entry.fill(o, GaslessEntry.Auth({v: v, r: r, s: s,
+        uint256 got0 = entry.fill(o, GaslessEntry.Auth({v: v, r: r, s: s,
             pv: pv, pr: pr, ps: ps, validAfter: 0, validBefore: o.deadline}), route, 1e6);
 
-        console2.log("delivered:", got[0]);
+        console2.log("delivered:", got0);
         // the stale route paid 0.5 AAPL; partitio's fallback must beat that by a wide margin
-        assertGt(got[0], 2.5e18, "fallback did not run - user got the stale route's price");
-        assertEq(IERC20(AAPL).balanceOf(user), got[0]);
+        assertGt(got0, 2.5e18, "fallback did not run - user got the stale route's price");
+        assertEq(IERC20(AAPL).balanceOf(user), got0);
         assertEq(IERC20(USDG).balanceOf(address(entry)), 0, "USDG stranded");
         assertEq(IERC20(AAPL).balanceOf(address(entry)), 0, "AAPL stranded");
     }

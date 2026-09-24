@@ -46,7 +46,12 @@ contract GaslessEntryTest is Test {
             leaves.push(keccak256(bytes.concat(keccak256(abi.encode(venues[i])))));
         root = _pair(leaves[0], leaves[1]);
 
-        router = new PartitioRouterV2(IPoolManager(PM), root);
+        address[] memory toks = new address[](1);
+        address[] memory fds = new address[](1);
+        toks[0] = AAPL;
+        fds[0] = AAPL_FEED;
+
+        router = new PartitioRouterV2(IPoolManager(PM), root, toks, fds);
         entry = new GaslessEntry(IUSDG(USDG), router,
             [KYBER_ROUTER, address(0), address(0), address(0)]);
     }
@@ -65,17 +70,21 @@ contract GaslessEntryTest is Test {
                       legs[j++] = PartitioRouterV2.Leg(venues[1], p, a1); }
     }
 
-    function _order(uint256 amountIn, uint256 maxFee, uint256 minOut, bytes32 salt)
+    /// @dev Legs must now sum to exactly `amountIn - fee` on a buy (review finding R-04), so every
+    /// route in this file is built from the spendable amount rather than from the gross.
+    function _order(uint256 amountIn, uint256 maxFeeUsdg, uint256 minOut, bytes32 salt)
         internal view returns (GaslessEntry.Order memory o)
     {
-        GaslessEntry.Output[] memory outs = new GaslessEntry.Output[](1);
-        outs[0] = GaslessEntry.Output({
-            token: AAPL, weightBps: 10_000, minOut: minOut,
-            guard: OracleGuard.Params({feed: AAPL_FEED, stockIsInput: false, maxDevBps: 300})
-        });
         o = GaslessEntry.Order({
-            owner: user, tokenIn: USDG, amountIn: amountIn, maxFee: maxFee,
-            deadline: block.timestamp + 600, salt: salt, outputs: outs
+            owner: user,
+            tokenIn: USDG,
+            amountIn: amountIn,
+            tokenOut: AAPL,
+            minOut: minOut,
+            maxFeeUsdg: maxFeeUsdg,
+            deadline: block.timestamp + 600,
+            salt: salt,
+            guard: OracleGuard.Params({maxDevBps: 300})
         });
     }
 
@@ -98,6 +107,12 @@ contract GaslessEntryTest is Test {
         return GaslessEntry.Route({aggregator: address(0), callData: "", aggMinOut: 0, legs: _legs(a0, a1)});
     }
 
+    /// Split `spendable` across both venues so the legs sum to it exactly.
+    function _routeFor(uint256 spendable) internal view returns (GaslessEntry.Route memory) {
+        uint256 half = spendable / 2;
+        return _route(half, spendable - half);
+    }
+
     // ------------------------------------------------------------------ tests
 
     function test_gaslessBuyWithRealUSDG() public {
@@ -109,11 +124,11 @@ contract GaslessEntryTest is Test {
 
         uint256 relayerBefore = IERC20(USDG).balanceOf(relayer);
         vm.prank(relayer);
-        uint256[] memory outs = entry.fill(o, a, _route((amt - fee) / 2, (amt - fee) / 2), fee);
+        uint256 got = entry.fill(o, a, _routeFor(amt - fee), fee);
 
-        console2.log("user AAPL received:", outs[0]);
-        assertGt(outs[0], 0, "no AAPL delivered");
-        assertEq(IERC20(AAPL).balanceOf(user), outs[0], "AAPL did not reach the user");
+        console2.log("user AAPL received:", got);
+        assertGt(got, 0, "no AAPL delivered");
+        assertEq(IERC20(AAPL).balanceOf(user), got, "AAPL did not reach the user");
         assertEq(IERC20(USDG).balanceOf(relayer) - relayerBefore, fee, "relayer fee wrong");
         // the user never held ETH and never sent a transaction
         assertEq(user.balance, 0, "user should never need ETH");
@@ -122,10 +137,11 @@ contract GaslessEntryTest is Test {
     /// no funds at rest
     function test_nothingLeftInEither() public {
         uint256 amt = 1000e6;
+        uint256 fee = 1e6;
         deal(USDG, user, amt);
         GaslessEntry.Order memory o = _order(amt, 5e6, 0, bytes32(uint256(2)));
         vm.prank(relayer);
-        entry.fill(o, _auth(o), _route((amt - 1e6) / 2, (amt - 1e6) / 2), 1e6);
+        entry.fill(o, _auth(o), _routeFor(amt - fee), fee);
         assertEq(IERC20(USDG).balanceOf(address(entry)), 0, "entry kept USDG");
         assertEq(IERC20(AAPL).balanceOf(address(entry)), 0, "entry kept AAPL");
         assertEq(IERC20(USDG).balanceOf(address(router)), 0, "router kept USDG");
@@ -135,27 +151,29 @@ contract GaslessEntryTest is Test {
     /// replay: the same order cannot be filled twice
     function test_replayRejected() public {
         uint256 amt = 500e6;
+        uint256 fee = 1e6;
         deal(USDG, user, amt * 2);
         GaslessEntry.Order memory o = _order(amt, 5e6, 0, bytes32(uint256(3)));
         GaslessEntry.Auth memory a = _auth(o);
         vm.prank(relayer);
-        entry.fill(o, a, _route(amt - 1e6, 0), 1e6);
+        entry.fill(o, a, _route(amt - fee, 0), fee);
 
         bytes32 oh = entry.hashOrder(o);
         vm.prank(relayer);
         vm.expectRevert(abi.encodeWithSelector(GaslessEntry.AlreadyExecuted.selector, oh));
-        entry.fill(o, a, _route(amt - 1e6, 0), 1e6);
+        entry.fill(o, a, _route(amt - fee, 0), fee);
     }
 
     /// USDG's own authorization state is the second lock
     function test_usdgAuthorizationConsumed() public {
         uint256 amt = 500e6;
+        uint256 fee = 1e6;
         deal(USDG, user, amt);
         GaslessEntry.Order memory o = _order(amt, 5e6, 0, bytes32(uint256(4)));
         bytes32 oh = entry.hashOrder(o);
         assertFalse(IUSDG(USDG).authorizationState(user, oh), "nonce used before the fill");
         vm.prank(relayer);
-        entry.fill(o, _auth(o), _route(amt - 1e6, 0), 1e6);
+        entry.fill(o, _auth(o), _route(amt - fee, 0), fee);
         assertTrue(IUSDG(USDG).authorizationState(user, oh), "USDG did not consume the nonce");
     }
 
@@ -170,39 +188,57 @@ contract GaslessEntryTest is Test {
         entry.fill(o, a, r, 2e6);
     }
 
+    /// The signed cap is not the only bound: a fee worth more than MAX_FEE_BPS of the order is
+    /// refused even when the user signed a larger absolute number (review finding
+    /// `maxfee-denomination-sell`).
+    function test_feeAbovePercentageCapRejected() public {
+        uint256 amt = 500e6;
+        uint256 fee = 10e6;                  // 2% of the order, cap is 0.50%
+        deal(USDG, user, amt);
+        GaslessEntry.Order memory o = _order(amt, 50e6, 0, bytes32(uint256(55)));
+        GaslessEntry.Auth memory a = _auth(o);
+        GaslessEntry.Route memory r = _route(amt - fee, 0);
+        vm.expectRevert(abi.encodeWithSelector(GaslessEntry.FeeAboveMax.selector, fee, (amt * 50) / 10_000));
+        vm.prank(relayer);
+        entry.fill(o, a, r, fee);
+    }
+
     function test_minOutEnforced() public {
         uint256 amt = 500e6;
+        uint256 fee = 1e6;
         deal(USDG, user, amt);
         // demand an absurd amount of AAPL
         GaslessEntry.Order memory o = _order(amt, 5e6, 1000e18, bytes32(uint256(6)));
         GaslessEntry.Auth memory a = _auth(o);
-        GaslessEntry.Route memory r = _route(amt - 1e6, 0);
+        GaslessEntry.Route memory r = _route(amt - fee, 0);
         vm.expectRevert();
         vm.prank(relayer);
-        entry.fill(o, a, r, 1e6);
+        entry.fill(o, a, r, fee);
     }
 
     function test_forgedSignatureRejected() public {
         uint256 amt = 500e6;
+        uint256 fee = 1e6;
         deal(USDG, user, amt);
         GaslessEntry.Order memory o = _order(amt, 5e6, 0, bytes32(uint256(7)));
         GaslessEntry.Auth memory a = _auth(o);
         a.v = a.v == 27 ? 28 : 27;               // corrupt the order signature
         vm.prank(relayer);
         vm.expectRevert();
-        entry.fill(o, a, _route(amt - 1e6, 0), 1e6);
+        entry.fill(o, a, _route(amt - fee, 0), fee);
     }
 
     function test_unlistedAggregatorRejected() public {
         uint256 amt = 500e6;
+        uint256 fee = 1e6;
         deal(USDG, user, amt);
         GaslessEntry.Order memory o = _order(amt, 5e6, 0, bytes32(uint256(8)));
         GaslessEntry.Route memory r = GaslessEntry.Route({
-            aggregator: address(0xDEAD), callData: hex"00", aggMinOut: 0, legs: _legs(amt - 1e6, 0)});
+            aggregator: address(0xDEAD), callData: hex"00", aggMinOut: 0, legs: _legs(amt - fee, 0)});
         GaslessEntry.Auth memory a = _auth(o);
         vm.expectRevert(abi.encodeWithSelector(GaslessEntry.AggregatorNotAllowed.selector, address(0xDEAD)));
         vm.prank(relayer);
-        entry.fill(o, a, r, 1e6);
+        entry.fill(o, a, r, fee);
     }
 
     /// An allowlisted aggregator whose call reverts must fall back to partitio in the SAME tx.
@@ -218,10 +254,10 @@ contract GaslessEntryTest is Test {
             legs: _legs(amt - fee, 0)
         });
         vm.prank(relayer);
-        uint256[] memory outs = entry.fill(o, _auth(o), r, fee);
-        console2.log("fallback delivered AAPL:", outs[0]);
-        assertGt(outs[0], 0, "fallback did not run");
-        assertEq(IERC20(AAPL).balanceOf(user), outs[0]);
+        uint256 got = entry.fill(o, _auth(o), r, fee);
+        console2.log("fallback delivered AAPL:", got);
+        assertGt(got, 0, "fallback did not run");
+        assertEq(IERC20(AAPL).balanceOf(user), got);
         assertEq(IERC20(USDG).balanceOf(address(entry)), 0, "USDG stranded after fallback");
     }
 
@@ -234,6 +270,7 @@ contract GaslessEntryTest is Test {
         uint256 victimPk = 0xB0B;
         address victim = vm.addr(victimPk);
         uint256 amt = 500e6;
+        uint256 fee = 1e6;
         deal(USDG, victim, amt);
         // the victim has already approved the entry contract from some earlier interaction
         vm.prank(victim);
@@ -246,24 +283,40 @@ contract GaslessEntryTest is Test {
         (uint8 v, bytes32 r, bytes32 s2) = vm.sign(userPk, oh);   // NOT the victim's key
         GaslessEntry.Auth memory a = GaslessEntry.Auth({
             v: v, r: r, s: s2, pv: v, pr: r, ps: s2, validAfter: 0, validBefore: o.deadline});
-        GaslessEntry.Route memory rt = _route(amt - 1e6, 0);
+        GaslessEntry.Route memory rt = _route(amt - fee, 0);
 
         uint256 victimBefore = IERC20(USDG).balanceOf(victim);
         vm.expectRevert(GaslessEntry.BadSignature.selector);
         vm.prank(relayer);
-        entry.fill(o, a, rt, 1e6);
+        entry.fill(o, a, rt, fee);
         assertEq(IERC20(USDG).balanceOf(victim), victimBefore, "victim lost funds");
     }
 
     function test_expiredOrderRejected() public {
         uint256 amt = 500e6;
+        uint256 fee = 1e6;
         deal(USDG, user, amt);
         GaslessEntry.Order memory o = _order(amt, 5e6, 0, bytes32(uint256(10)));
         GaslessEntry.Auth memory a = _auth(o);
         vm.warp(o.deadline + 1);
         vm.prank(relayer);
         vm.expectRevert(GaslessEntry.Expired.selector);
-        entry.fill(o, a, _route(amt - 1e6, 0), 1e6);
+        entry.fill(o, a, _route(amt - fee, 0), fee);
+    }
+
+    /// R-04: the relayer's legs must cover the whole order. Routing a sliver while charging the
+    /// full fee is now a revert rather than a silent partial fill.
+    function test_legsMustCoverTheWholeOrder() public {
+        uint256 amt = 1000e6;
+        uint256 fee = 5e6;
+        deal(USDG, user, amt);
+        GaslessEntry.Order memory o = _order(amt, 5e6, 0, bytes32(uint256(11)));
+        GaslessEntry.Auth memory a = _auth(o);
+        GaslessEntry.Route memory r = _route(1e6, 0);     // 1 USDG of a 1000 USDG order
+        vm.expectRevert(abi.encodeWithSelector(
+            GaslessEntry.LegsDoNotCoverOrder.selector, uint256(1e6), amt - fee));
+        vm.prank(relayer);
+        entry.fill(o, a, r, fee);
     }
 }
 

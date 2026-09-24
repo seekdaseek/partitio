@@ -44,7 +44,11 @@ contract RouterV2Test is Test {
         bytes32 n23 = _hashPair(leaves[2], leaves[3]);
         root = _hashPair(n01, n23);
 
-        router = new PartitioRouterV2(IPoolManager(PM), root);
+        address[] memory toks = new address[](1);
+        address[] memory fds = new address[](1);
+        toks[0] = AAPL;
+        fds[0] = AAPL_FEED;
+        router = new PartitioRouterV2(IPoolManager(PM), root, toks, fds);
     }
 
     function _hashPair(bytes32 a, bytes32 b) internal pure returns (bytes32) {
@@ -59,8 +63,11 @@ contract RouterV2Test is Test {
         else { p[0] = leaves[2]; p[1] = _hashPair(leaves[0], leaves[1]); }
     }
 
-    function _guard(bool stockIsInput, uint256 bps) internal pure returns (OracleGuard.Params memory) {
-        return OracleGuard.Params({feed: AAPL_FEED, stockIsInput: stockIsInput, maxDevBps: bps});
+    /// The feed and the trade direction are no longer the caller's to choose: the router reads
+    /// both off its immutable map and the tokens being traded (review findings R-09 and
+    /// guard-direction-unbound). All a caller still picks is the band.
+    function _guard(bool, uint256 bps) internal pure returns (OracleGuard.Params memory) {
+        return OracleGuard.Params({maxDevBps: bps});
     }
 
     function _legs(uint256[4] memory amts) internal view returns (PartitioRouterV2.Leg[] memory legs) {
