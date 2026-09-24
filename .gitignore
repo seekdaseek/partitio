@@ -23,3 +23,7 @@ qn_rpc
 # private security findings - never committed
 docs/FINDINGS.md
 docs/DISCLOSURE*.md
+
+# fuzzing artifacts (independent review)
+corpus/
+crytic-export/
