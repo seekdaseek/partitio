@@ -319,7 +319,9 @@ http.createServer((req, res) => {
     const u = new URL(req.url, "http://x");
     if (u.pathname === "/health") {
       const r = db.prepare("SELECT id,started_at,finished_at,block FROM run ORDER BY id DESC LIMIT 1").get();
-      return send(200, { ok: true, lastRun: r ?? null, tickers: TICKERS.length, sizes: SIZES_USD });
+      const unfinished = db.prepare("SELECT COUNT(*) c FROM run WHERE finished_at IS NULL").get().c;
+      return send(200, { ok: true, inFlight, lastRun: r ?? null, unfinishedRuns: unfinished,
+                         tickers: TICKERS.length, sizes: SIZES_USD });
     }
     if (u.pathname === "/latest") {
       const r = db.prepare("SELECT id FROM run WHERE finished_at IS NOT NULL ORDER BY id DESC LIMIT 1").get();
@@ -339,6 +341,27 @@ http.createServer((req, res) => {
   } catch (e) { send(500, { err: String(e.message || e) }); }
 }).listen(PORT, () => log(`http on :${PORT}`));
 
+// A run can exceed the interval: the Kyber leg is deliberately slow. Overlapping runs interleave
+// writes and leave finished_at NULL forever, so the timer skips rather than starting a second one.
+let inFlight = false;
+let skipped = 0;
+async function tick() {
+  if (inFlight) {
+    skipped++;
+    log(`run still in flight, skipping this tick (${skipped} skipped since last completion)`);
+    return;
+  }
+  inFlight = true;
+  const t0 = Date.now();
+  try { await runOnce(); }
+  catch (e) { log("run failed:", e.message); }
+  finally {
+    inFlight = false;
+    log(`run wall time ${((Date.now() - t0) / 1000).toFixed(0)}s, interval ${(INTERVAL_MS / 1000).toFixed(0)}s`);
+    skipped = 0;
+  }
+}
+
 log(`partitio-evidence starting: ${TICKERS.length} tickers x ${SIZES_USD.length} sizes, K=${K_CHUNKS}`);
-runOnce().catch((e) => log("run failed:", e.message));
-setInterval(() => runOnce().catch((e) => log("run failed:", e.message)), INTERVAL_MS);
+tick();
+setInterval(tick, INTERVAL_MS);

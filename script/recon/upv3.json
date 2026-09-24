@@ -1,0 +1,369 @@
+{
+ "at": "2026-09-24T12:43:29.190Z",
+ "pools": [
+  {
+   "kind": "v3",
+   "family": "up-v3",
+   "pair": "AMZN/USDG",
+   "addr": "0x9fef5b24e659592dcad649bfef29bbc742179e87",
+   "fee": 200,
+   "tickSpacing": 200,
+   "liquidity": "458235276518",
+   "provenance": {
+    "source": "eth_getLogs topic0 0xab0d57f0 (up-v3 factory)",
+    "block": 66496548
+   }
+  },
+  {
+   "kind": "v3",
+   "family": "up-v3",
+   "pair": "GME/USDG",
+   "addr": "0xda0ee6b8ef5d3a2338a15621fabf6619070f1b64",
+   "fee": 10,
+   "tickSpacing": 10,
+   "liquidity": "135215011061148696",
+   "provenance": {
+    "source": "eth_getLogs topic0 0xab0d57f0 (up-v3 factory)",
+    "block": 22580342
+   }
+  },
+  {
+   "kind": "v3",
+   "family": "up-v3",
+   "pair": "GOOGL/USDG",
+   "addr": "0xe279774b0bf7e23e4f4aaf3c7bbc552bc5a92a28",
+   "fee": 60,
+   "tickSpacing": 60,
+   "liquidity": "30710229535843520",
+   "provenance": {
+    "source": "eth_getLogs topic0 0xab0d57f0 (up-v3 factory)",
+    "block": 22580455
+   }
+  },
+  {
+   "kind": "v3",
+   "family": "up-v3",
+   "pair": "NBIS/SNDK",
+   "addr": "0xb28a1c1763540bf5d5f00c487886f2e140bc2a67",
+   "fee": 60,
+   "tickSpacing": 60,
+   "liquidity": "44525990330961164068",
+   "provenance": {
+    "source": "eth_getLogs topic0 0xab0d57f0 (up-v3 factory)",
+    "block": 58431678
+   }
+  },
+  {
+   "kind": "v3",
+   "family": "up-v3",
+   "pair": "RDDT/USDG",
+   "addr": "0x518a291f27ce1c476f0c9d215a1bc02f35e37cae",
+   "fee": 60,
+   "tickSpacing": 60,
+   "liquidity": "4148381209347295",
+   "provenance": {
+    "source": "eth_getLogs topic0 0xab0d57f0 (up-v3 factory)",
+    "block": 52738084
+   }
+  },
+  {
+   "kind": "v3",
+   "family": "up-v3",
+   "pair": "SPCX/USDG",
+   "addr": "0x9d590437abaae12cf9fe0627caf4cfd633152599",
+   "fee": 10,
+   "tickSpacing": 10,
+   "liquidity": "174679525527248096",
+   "provenance": {
+    "source": "eth_getLogs topic0 0xab0d57f0 (up-v3 factory)",
+    "block": 22580229
+   }
+  },
+  {
+   "kind": "v3",
+   "family": "up-v3",
+   "pair": "SPY/USDG",
+   "addr": "0x5ad1a528cd9de3962cb6c75ff250e434887479c1",
+   "fee": 60,
+   "tickSpacing": 60,
+   "liquidity": "206419106804297860",
+   "provenance": {
+    "source": "eth_getLogs topic0 0xab0d57f0 (up-v3 factory)",
+    "block": 22785706
+   }
+  },
+  {
+   "kind": "v3",
+   "family": "up-v3",
+   "pair": "TSLA/USDG",
+   "addr": "0x77bf6d7d6f18c2c0ca0673f95af96a8812a3cb86",
+   "fee": 60,
+   "tickSpacing": 60,
+   "liquidity": "100601264972595903",
+   "provenance": {
+    "source": "eth_getLogs topic0 0xab0d57f0 (up-v3 factory)",
+    "block": 16557035
+   }
+  },
+  {
+   "kind": "v3",
+   "family": "up-v3",
+   "pair": "USDG/AAPL",
+   "addr": "0x19d55aba3e5d2c389b7011c634725136dfdcae33",
+   "fee": 60,
+   "tickSpacing": 60,
+   "liquidity": "618450035333834986",
+   "provenance": {
+    "source": "eth_getLogs topic0 0xab0d57f0 (up-v3 factory)",
+    "block": 16557135
+   }
+  },
+  {
+   "kind": "v3",
+   "family": "up-v3",
+   "pair": "USDG/COIN",
+   "addr": "0xf13a2d87e13904e0b38270686d5953a7d8207b91",
+   "fee": 60,
+   "tickSpacing": 60,
+   "liquidity": "122619168088628575",
+   "provenance": {
+    "source": "eth_getLogs topic0 0xab0d57f0 (up-v3 factory)",
+    "block": 22580794
+   }
+  },
+  {
+   "kind": "v3",
+   "family": "up-v3",
+   "pair": "USDG/CRCL",
+   "addr": "0xbe1563da6cc4e3057334fd10735bebc6770b537f",
+   "fee": 60,
+   "tickSpacing": 60,
+   "liquidity": "102658633472876807",
+   "provenance": {
+    "source": "eth_getLogs topic0 0xab0d57f0 (up-v3 factory)",
+    "block": 52738401
+   }
+  },
+  {
+   "kind": "v3",
+   "family": "up-v3",
+   "pair": "USDG/GLD",
+   "addr": "0xc9dc17b3fa4d12022e980b1e8ed118d29c58f2a8",
+   "fee": 10,
+   "tickSpacing": 10,
+   "liquidity": "534173098943273679",
+   "provenance": {
+    "source": "eth_getLogs topic0 0xab0d57f0 (up-v3 factory)",
+    "block": 52736824
+   }
+  },
+  {
+   "kind": "v3",
+   "family": "up-v3",
+   "pair": "USDG/INTC",
+   "addr": "0x6290be6e6913708866e6f17eaf3f4fcc7d3fdf67",
+   "fee": 60,
+   "tickSpacing": 60,
+   "liquidity": "30782584355195656",
+   "provenance": {
+    "source": "eth_getLogs topic0 0xab0d57f0 (up-v3 factory)",
+    "block": 22580568
+   }
+  },
+  {
+   "kind": "v3",
+   "family": "up-v3",
+   "pair": "USDG/META",
+   "addr": "0xec335d92116f6c3a94579f3af89022b6faa9d958",
+   "fee": 200,
+   "tickSpacing": 200,
+   "liquidity": "1262108799584",
+   "provenance": {
+    "source": "eth_getLogs topic0 0xab0d57f0 (up-v3 factory)",
+    "block": 60943771
+   }
+  },
+  {
+   "kind": "v3",
+   "family": "up-v3",
+   "pair": "USDG/MSFT",
+   "addr": "0x4230750b3c69ae6054a3f778d75adc2e9a27d70f",
+   "fee": 60,
+   "tickSpacing": 60,
+   "liquidity": "54846475271411922",
+   "provenance": {
+    "source": "eth_getLogs topic0 0xab0d57f0 (up-v3 factory)",
+    "block": 16557201
+   }
+  },
+  {
+   "kind": "v3",
+   "family": "up-v3",
+   "pair": "USDG/MSTR",
+   "addr": "0x983fd86a92e206112a1e6937d39f7b44a141c1d4",
+   "fee": 10,
+   "tickSpacing": 10,
+   "liquidity": "271561981236953143",
+   "provenance": {
+    "source": "eth_getLogs topic0 0xab0d57f0 (up-v3 factory)",
+    "block": 52737973
+   }
+  },
+  {
+   "kind": "v3",
+   "family": "up-v3",
+   "pair": "USDG/MU",
+   "addr": "0xb717159fb22edd02ef832d3fd79f1b1bd958eaea",
+   "fee": 60,
+   "tickSpacing": 60,
+   "liquidity": "3323819566498091",
+   "provenance": {
+    "source": "eth_getLogs topic0 0xab0d57f0 (up-v3 factory)",
+    "block": 22580681
+   }
+  },
+  {
+   "kind": "v3",
+   "family": "up-v3",
+   "pair": "USDG/NBIS",
+   "addr": "0x7954c1b06b8903739a5dc0f3f4dac629ab9be6bc",
+   "fee": 60,
+   "tickSpacing": 60,
+   "liquidity": "5428548102048",
+   "provenance": {
+    "source": "eth_getLogs topic0 0xab0d57f0 (up-v3 factory)",
+    "block": 27048589
+   }
+  },
+  {
+   "kind": "v3",
+   "family": "up-v3",
+   "pair": "USDG/NVDA",
+   "addr": "0x18a5af4e442f8be68968cc1f00d537f8af2d12cd",
+   "fee": 60,
+   "tickSpacing": 60,
+   "liquidity": "594341878476700011",
+   "provenance": {
+    "source": "eth_getLogs topic0 0xab0d57f0 (up-v3 factory)",
+    "block": 16556757
+   }
+  },
+  {
+   "kind": "v3",
+   "family": "up-v3",
+   "pair": "USDG/NVDA",
+   "addr": "0x896fac8215edd1b52b5a082cd2e4f1ab55f8c060",
+   "fee": 200,
+   "tickSpacing": 200,
+   "liquidity": "223564169323",
+   "provenance": {
+    "source": "eth_getLogs topic0 0xab0d57f0 (up-v3 factory)",
+    "block": 16899750
+   }
+  },
+  {
+   "kind": "v3",
+   "family": "up-v3",
+   "pair": "USDG/PLTR",
+   "addr": "0x768c240bffd8855e942bbd78137988a08bdd36a3",
+   "fee": 60,
+   "tickSpacing": 60,
+   "liquidity": "14778559930259989",
+   "provenance": {
+    "source": "eth_getLogs topic0 0xab0d57f0 (up-v3 factory)",
+    "block": 52738348
+   }
+  },
+  {
+   "kind": "v3",
+   "family": "up-v3",
+   "pair": "USDG/QQQ",
+   "addr": "0x425c43d331921953901f455b30b5a39f8e403b7f",
+   "fee": 10,
+   "tickSpacing": 10,
+   "liquidity": "2072165331058731",
+   "provenance": {
+    "source": "eth_getLogs topic0 0xab0d57f0 (up-v3 factory)",
+    "block": 52738136
+   }
+  },
+  {
+   "kind": "v3",
+   "family": "up-v3",
+   "pair": "USDG/SGOV",
+   "addr": "0xca7b364afa508780ab660b14416b6d7f0e64f658",
+   "fee": 10,
+   "tickSpacing": 10,
+   "liquidity": "9120617556804553334",
+   "provenance": {
+    "source": "eth_getLogs topic0 0xab0d57f0 (up-v3 factory)",
+    "block": 52738295
+   }
+  },
+  {
+   "kind": "v3",
+   "family": "up-v3",
+   "pair": "USDG/SNDK",
+   "addr": "0x5ca3fe49388b244d66f60b03edd940cc52b77b2e",
+   "fee": 10,
+   "tickSpacing": 10,
+   "liquidity": "9442579277403110",
+   "provenance": {
+    "source": "eth_getLogs topic0 0xab0d57f0 (up-v3 factory)",
+    "block": 28829153
+   }
+  },
+  {
+   "kind": "v3",
+   "family": "up-v3",
+   "pair": "USDG/USO",
+   "addr": "0x98a27fc90c643562f9793089acf2697ab4c0a880",
+   "fee": 10,
+   "tickSpacing": 10,
+   "liquidity": "23810407000440299",
+   "provenance": {
+    "source": "eth_getLogs topic0 0xab0d57f0 (up-v3 factory)",
+    "block": 28829100
+   }
+  },
+  {
+   "kind": "v3",
+   "family": "up-v3",
+   "pair": "WETH/MSFT",
+   "addr": "0x8701f90eaae8c8787258af54240595e1668cc876",
+   "fee": 200,
+   "tickSpacing": 200,
+   "liquidity": "1094822769631149056",
+   "provenance": {
+    "source": "eth_getLogs topic0 0xab0d57f0 (up-v3 factory)",
+    "block": 54026266
+   }
+  },
+  {
+   "kind": "v3",
+   "family": "up-v3",
+   "pair": "WETH/USDG",
+   "addr": "0x16679e2ac1a798865ecf1c1639e67693ddb1c220",
+   "fee": 10,
+   "tickSpacing": 10,
+   "liquidity": "200725167848555382",
+   "provenance": {
+    "source": "eth_getLogs topic0 0xab0d57f0 (up-v3 factory)",
+    "block": 6185429
+   }
+  },
+  {
+   "kind": "v3",
+   "family": "up-v3",
+   "pair": "WETH/USDG",
+   "addr": "0xfb5637e6163279cb22fdf15b0fe5239b79e7e025",
+   "fee": 60,
+   "tickSpacing": 60,
+   "liquidity": "3855488438683",
+   "provenance": {
+    "source": "eth_getLogs topic0 0xab0d57f0 (up-v3 factory)",
+    "block": 6185457
+   }
+  }
+ ]
+}

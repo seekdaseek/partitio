@@ -130,12 +130,54 @@ methods is the reason to trust either.
 
 ## Gaps, stated plainly
 
-- **`up-v3` is not enumerable.** Its factory `0x1ac9dB4a…B7F3` emits no `PoolCreated` and reverts
-  on `getPool`. Only one of its pools is known (`0x19d55aba…`, found in a Kyber route), and it beat
-  canonical v3 in the G5 swap test, so this gap has a measurable cost. UNSOLVED.
+- **`up-v3` — SOLVED.** Its factory `0x1ac9dB4a…B7F3` emits no `PoolCreated` and reverts on
+  `getPool`, but it does emit its own event, topic0
+  `0xab0d57f0df537bb25e80245ef7748fa62353808c54d6e528a9dd20887aed9ac2`, with `(token0, token1, fee)`
+  indexed and the pool address in data. Found by reading every log the factory has ever emitted
+  rather than guessing signatures; the signature name is still unidentified and does not matter.
+  **1,877 pools exist; 61 are on our token universe; 28 hold liquidity**, at fee tiers
+  1/10/50/60/100/200/2000 — nothing like Uniswap's. Nearly every ticker has one. Raw data in
+  `script/recon/upv3.json`.
+
+  **Not yet quotable.** Uniswap's QuoterV2 derives the pool address by CREATE2 from the canonical
+  factory, so it cannot quote a fork's pools. up-v3 pools need either their own quoter, an
+  `eth_call` state-override quoter (state overrides are confirmed working on this RPC), or the v3
+  maths implemented directly — which is what the Stylus module is for. Until then they are in the
+  registry but absent from the evidence engine.
 - **`metric-propamm` does not answer `token0()`** and has different bytecode from the Rialto
   makers. Interface unknown. UNTESTED, excluded from the registry.
 - **`pmm-19` and `kipseli-prop` are off-chain RFQ** addressed by synthetic identifiers. They are
   not reachable from any contract and are deliberately out of scope. The gap they represent is
   measured by the evidence engine rather than hidden.
 - 4 discovery queries failed and are recorded as errors in discovered.json, not as zeros.
+
+
+## The baseline is registry-scoped — read this before quoting any gain figure
+
+`best single venue` in the evidence engine means **the best venue in this registry**, not the best
+venue on the chain. Kyber routes on 4663 touch at least twelve families:
+
+| family | in registry | reachable from a contract |
+|---|---|---|
+| `uniswapv3` | yes | yes |
+| `uniswap-v4` (incl. the `fables` and `arrakis` hook pools) | yes | yes |
+| `fermi-prop` | yes (11 pairs) | yes, settlement-proven |
+| `up-v3` | discovered, **not quotable yet** | yes |
+| `tessera` | **no** | unknown |
+| `ramses-v3` | **no** | unknown |
+| `manta-prop` | **no** | unknown |
+| `metric-propamm` | **no** | unknown |
+| `pancake-infinity-cl` | **no** | unknown |
+| `alandale-v4` | **no** | likely (v4 hook family) |
+| `pmm-19` | n/a | **no — synthetic id, off-chain RFQ** |
+| `kipseli-prop` | n/a | **no — synthetic id, off-chain RFQ** |
+
+**Consequence: every "gain versus best single venue" number is an UPPER BOUND.** If a deeper pool
+exists in a family we have not indexed, the true best single venue is higher and the measured gain
+shrinks. The error runs in the direction that flatters partitio, which is the direction that must
+never be published unqualified.
+
+Until the missing families are indexed, the defensible external comparison is **Kyber all-sources**,
+which sees everything including the off-chain makers we cannot reach. On AAPL $500k that comparison
+currently runs *against* us — Kyber 497,516.84 versus a 490,278.36 executed split, roughly 145 bps
+behind — and that is the honest headline, not the registry-scoped figure.
