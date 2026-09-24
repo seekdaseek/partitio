@@ -118,3 +118,23 @@ code was right:
 - Echidna or Medusa property fuzzing of GaslessEntry and the router invariants.
 - Slither on the v1 contracts still deployed on mainnet (router/caller/Stylus). v1 remains live at
   the addresses in `docs/DEPLOYMENTS.md` and is superseded by v2, not upgraded.
+
+### 4. The relayer's quote silently under-routed — found in the first smoke test
+
+`POST /api/quote` for a 100 USDG AAPL buy returned **0.111 AAPL** where the best single venue gave
+**0.296** — the split used one leg and 37.5% of the input.
+
+Cause: the quote issues one JSON-RPC batch of up to 56 calls (venues × 8 ladder rungs). publicnode
+accepts 30 and the canonical RPC tightens under load, so the upper rungs came back `null`, greedy
+ran out of improving rungs and stopped early. A truncated batch looks exactly like a thin market.
+
+Two fixes, because one would have hidden the other:
+
+- **Batches are chunked at 25.** A partial result is now impossible rather than merely unlikely.
+- **An invariant was added: partitio is never worse than the best single venue.** If the split
+  total comes out below the best single venue's full-size quote, the whole order is routed to that
+  venue instead. A partial split is a measurement failure, not a price — and this is the last line
+  before a bad number reaches a user or a headline.
+
+The response now also carries `unmeasuredRungs / totalRungs`, so thin coverage is visible in the
+payload instead of quietly shrinking the split.
