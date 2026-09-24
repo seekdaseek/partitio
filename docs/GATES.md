@@ -576,3 +576,63 @@ TSLA has Morpho markets but no resolvable `BASE_FEED_1`. UNRESOLVED.
 
 QuickNode verified `eth_chainId` = `0x1237` from both the Mac and the VPS; file is 0600 on both and
 was never printed. The engine deliberately stays on canonical + publicnode.
+
+
+---
+
+# 7702 DELEGATES — identified, and what it means (2026-09-24)
+
+Identities confirmed on `robinhoodchain.blockscout.com`:
+
+| delegate | EOAs | what it is |
+|---|---|---|
+| `0xe6cae83bde06e4c305530e199d7217f42808555b` | 5,461 | **Simple7702Account** — eth-infinitism's reference account for v0.8 |
+| `0x63c0c19a282a1b52b07dd5a65b58948a07dae32b` | 1,002 | **MetaMask `EIP7702StatelessDeleGator` v1.3.0** |
+| `0x77021100bd87b7008e5e1989d0eb38555d0d0000` | 796 | **SemiModularAccount7702** — Alchemy Modular Account v2, 7702 variant |
+| `0x69007702764179f14f51cdce752f4f775d74e139` | 611 | **SemiModularAccount7702** — same |
+| `0x000000009b1d0af20d8c6d0a44e162d11f9b8f00` | 464 | **Uniswap Calibur** |
+
+**Correction:** `0x4337084D9E255Ff0702461CF8895CE9E3b5Ff108` is the **canonical ERC-4337 EntryPoint
+v0.8.0**, not a custom one. I called it non-canonical purely because it was unfamiliar and
+`VERSION()` did not answer — an assumption dressed as a finding. Every note is corrected.
+
+These are all standard, widely-used account implementations. Nothing bespoke, nothing sponsored by
+a single app.
+
+## Who pays
+
+| EntryPoint | UserOps (2.8h) | self-paid | sponsored |
+|---|---|---|---|
+| v0.8.0 `0x4337084D` | 12,122 | **99.2%** | 0.8% |
+| v0.7 `0x00000000717…` | 5,424 | 76.5% | 23.5% |
+
+Counter-hypothesis tested and rejected: only 4/200 and 2/200 zero-ETH 7702 wallets hold an
+EntryPoint deposit, so "self-paid" is not hiding a pre-funded balance.
+
+Nonces settle it — 7702 zero-ETH wallets have a **median nonce of 1**: delegated once, then idle.
+7702 wallets that hold ETH have a median nonce of 99. Plain zero-ETH EOAs are 99% nonce 0, pure
+recipients.
+
+**Conclusion: active smart accounts pay their own gas; the zero-ETH ones are idle, not sponsored.
+Gasless is a feature of how partitio executes, not the headline.**
+
+---
+
+# POSITIONING (locked)
+
+**"The best available price, every time."**
+
+The measured edge is **fill certainty and fragmentation**, not beating aggregators. partitio is
+currently 1–87 bps *behind* Kyber all-sources when Kyber answers — which is exactly the argument
+for taking their price when it is there, and having our own route when it is not.
+
+- The relayer quotes Kyber, 0x, LI.FI **and** partitio, and submits whichever returns most.
+- If the aggregator leg reverts or under-delivers, `GaslessEntry` falls back to partitio **in the
+  same transaction**.
+- **The aggregator leg is NEVER CUT.** It moved from a stretch item to the core of the product.
+- Signed gas-free entry stays because it is how the relayer executes, but it is not the claim.
+
+Headline metrics, per provider, at a disclosed request rate:
+1. fill rate — aggregator answered *and* the route was executable, vs partitio;
+2. when both answer, the gap in bps, stated honestly;
+3. when the aggregator does not answer, partitio vs the best single pool, medians $1k–$500k.
