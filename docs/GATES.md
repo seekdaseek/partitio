@@ -272,3 +272,105 @@ selector set: `swap`, `slot0`, `liquidity`, `fee`, `tickSpacing`, `ticks`, `tick
 of the pool key. Callback authentication must therefore be **registry membership** — `msg.sender` must
 be a venue the registry holds — rather than address derivation. Invariant I4 is restated accordingly:
 *a callback from any address not in the venue registry reverts.*
+
+
+---
+
+# PIVOT GATES — gasless USDG-only stock trading (2026-09-24)
+
+## G1 — Gasless sources
+
+**Status: PASS. Both sides are gasless with signatures alone — no gas drip and no EIP-7702 needed.**
+
+### USDG `0x5fc5360D0400a0Fd4f2af552ADD042D716F1d168`
+
+USDG is a **proxy over an EIP-2535-style diamond**: 343 bytes at the token address, EIP-1967 impl
+slot pointing at `0x68184c449e1a8f34fa18d289737129fd27b66f8f`, and unknown selectors revert with
+`FacetNotFound`.
+
+**A bytecode grep of that implementation is a false negative and was discarded.** Grepping the impl
+for `receiveWithAuthorization`/`permit` selectors reported *absent* for every one of them — the
+grep method itself was sound (control: `balanceOf` 0x70a08231 found, `0xdeadbeef` not found), but a
+diamond dispatches through a selector→facet mapping in storage, so the selectors need not appear as
+PUSH4 in the base implementation. The loupe (`facetAddress`, `facetAddresses`) is not exposed
+either. **Live calls are the only authoritative test here.**
+
+Revert-reason discriminator — `FacetNotFound` means the selector is absent, any other revert means
+it exists and the input was bad:
+
+| call | result | verdict |
+|---|---|---|
+| `permit(...)` dummy sig | `InvalidSignature` | **EIP-2612 present** |
+| `receiveWithAuthorization(...)` dummy sig | `CallerMustBePayee` | **EIP-3009 present** |
+| `transferWithAuthorization(...)` dummy sig | `InvalidSignature` | **EIP-3009 present** |
+| `authorizationState(addr, nonce)` | `false` | present |
+| `nonces(addr)` | `0` | present |
+| `DOMAIN_SEPARATOR()` | `0x7a3d7400…b62036` | present |
+| `version()` — absent control | `FacetNotFound` | correctly absent |
+| `totalSupply()` — present control | 682,823,751 USDG | correctly present |
+
+`CallerMustBePayee` is the useful detail: `receiveWithAuthorization` enforces `msg.sender == to`,
+which binds an authorization to the contract that redeems it. That is exactly the front-running
+protection GaslessEntry wants, and it means GaslessEntry must itself be the payee.
+
+### Signed dry-run — the proof, not the inference
+
+A real EIP-712 signature was built with a throwaway key and dry-run through `eth_call`:
+
+```
+domainSeparator 0x7a3d7400b27830f4f91c2c16a082486d67c1befecaec2f53b33f1f35d5b62036
+typehash        0xd099cc98ef71107a616c4f0f941f04c322d8e254fe26b3c6668db87aae413de8
+                keccak("ReceiveWithAuthorization(address from,address to,uint256 value,
+                        uint256 validAfter,uint256 validBefore,bytes32 nonce)")
+digest          0x1ef3a97ac764c379e1ac0b5242107967d4bc6befea73e27cd9fa1ae3e218ce4b
+result          execution reverted: InsufficientFunds
+```
+
+`InsufficientFunds` is a **pass**: the call cleared the selector check, cleared `CallerMustBePayee`,
+and cleared EIP-712 signature verification, failing only because the signer holds 0 USDG. The
+domain separator, typehash, struct hash, digest and signature construction are all confirmed
+correct against the live contract — which is the exact machinery B2 needs.
+
+### Stock tokens
+
+All five probed tokens are 569-byte proxies with an empty EIP-1967 slot (a different proxy
+pattern), and all five answer identically:
+
+| token | `permit` dummy | `nonces` | `DOMAIN_SEPARATOR` | `eip712Domain` | `uiMultiplier` | `paused()` |
+|---|---|---|---|---|---|---|
+| AAPL | `ECDSAInvalidSignature` | 0 | ✓ | ✓ | 1.000566080061092436 | false |
+| TSLA | `ECDSAInvalidSignature` | 0 | ✓ | ✓ | 1.000000000000000000 | false |
+| NVDA | `ECDSAInvalidSignature` | 0 | ✓ | ✓ | 1.000775159164630595 | false |
+| SPY | `ECDSAInvalidSignature` | 0 | ✓ | ✓ | 1.001717991187472003 | false |
+| QQQ | `ECDSAInvalidSignature` | 0 | ✓ | ✓ | 1.000700791241405425 | false |
+
+`ECDSAInvalidSignature` is OpenZeppelin's error, so `permit` exists and reached signature recovery.
+`uiMultiplier()` confirms ERC-8056. No pause is active and no transfer-restriction or allowlist
+revert was observed on the read path — **UNTESTED** for an actual restricted transfer, which only a
+live transfer between two non-allowlisted addresses would settle.
+
+### Decision
+
+**Neither fallback is needed.** Buys are gasless through USDG `receiveWithAuthorization` (EIP-3009,
+payee-bound); sells are gasless through stock-token `permit` (EIP-2612). The sponsored gas drip and
+the EIP-7702 smart-account path are both **dropped** — they were contingencies for a missing permit
+that is not missing.
+
+Gas context, at the live 0.0415 gwei: an approve costs 0.000002106 ETH and a measured partitio swap
+0.000009265 ETH, so approve+swap is **0.000011370 ETH**. That is the bar a wallet must clear to
+move its own position, and it is the threshold G2 measures against.
+
+## G2 — The problem, measured
+
+**Status: IN PROGRESS.** Scope constraint found and recorded: USDG exceeds the RPC's 10,000-result
+log cap inside 10,000 blocks, and the chain is 71.4M blocks deep, so a full-history holder set is
+not reachable through this RPC. The chain's Blockscout explorer
+(`robinhoodchain.blockscout.com`) sits behind a Cloudflare challenge which was **not** circumvented.
+
+The scan is therefore a bounded recent window, and the result is a **lower bound**. The bias is
+conservative: wallets that transferred recently are more likely to hold ETH than dormant ones, so
+the true zero-ETH population is at least as large as what this reports.
+
+## G3 — Engine v2
+
+**Status: NOT STARTED.**
