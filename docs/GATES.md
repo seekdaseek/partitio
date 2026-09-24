@@ -452,3 +452,127 @@ It now takes each parallel split's **first** hop `swapAmount` as a share of inpu
 
 Still outstanding in v2: complete Rialto pair coverage, two-hop paths through SPY/WETH, and the
 MAX_AMM_VENUES / K_CHUNKS sensitivity sweep.
+
+
+---
+
+# G1 ADDENDA (2026-09-24, after review)
+
+## Stock-token permit, proved by doing it
+
+`permit()` is state-changing, so a bare `eth_call` proves only that the selector exists. Multicall3
+(`0xcA11bde0…6CA11`, verified on 4663 against a known balance) runs `permit()` and `allowance()`
+inside **one** `eth_call`, where the state change persists:
+
+| token | domain separator | nonce | permit | allowance read back | verdict |
+|---|---|---|---|---|---|
+| AAPL | `0xddc20599…` | 0 | ok | 123456789 / 123456789 | **PASS** |
+| TSLA | `0xaed03ce8…` | 0 | ok | 123456789 / 123456789 | **PASS** |
+| NVDA | `0x9561b23b…` | 0 | ok | 123456789 / 123456789 | **PASS** |
+| SPY | `0x9664225d…` | 0 | ok | 123456789 / 123456789 | **PASS** |
+| QQQ | `0x0d742aa0…` | 0 | ok | 123456789 / 123456789 | **PASS** |
+
+**5/5.** Domain separator, typehash and digest construction are confirmed per token, same standard
+as the USDG `receiveWithAuthorization` dry-run.
+
+## Transfer restrictions
+
+The stock tokens are **beacon proxies**. All five point at beacon
+`0xe10b6f6b275de231345c20d14ab812db62151b00` → implementation
+`0xb35490d6f9163DE4F80d88dc75c3516eb64C5aE2`.
+
+**Trust consequence: one beacon upgrade changes the behaviour of every stock token at once.** That
+belongs in the README's trust model, not in a footnote.
+
+Selector extraction from the shared implementation (70 PUSH4 selectors, extraction validated by a
+`balanceOf` control) shows a standard OpenZeppelin surface: ERC20, ERC20Permit, Pausable,
+AccessControl, mint/burn. **No blocklist, allowlist, freeze or ERC-1404 restriction function is
+present.** The only transfer gates are `paused()` — currently `false` on all five — and
+AccessControl roles, which gate mint/burn/pause rather than transfers.
+
+Simulated transfers, `eth_call` from real holders:
+
+| token | from | to | result |
+|---|---|---|---|
+| AAPL | EOA holder | fresh EOA (no code) | **SUCCESS** |
+| AAPL | EOA holder | address with code | **SUCCESS** |
+| AAPL | contract holder | fresh EOA | **SUCCESS** |
+| AAPL | contract holder | address with code | **SUCCESS** |
+| USDG | contract holder | fresh EOA | **SUCCESS** |
+| USDG | contract holder | address with code | **SUCCESS** |
+| AAPL | EOA holder, amount > balance | fresh EOA | **FAILS** `ERC20InsufficientBalance` |
+
+The negative control failing is what makes the six successes meaningful.
+
+---
+
+# G2 CORRECTED — classification first
+
+**The earlier 40.4% zero-ETH figure was wrong and is withdrawn.** Transfer logs contain pools,
+routers, vaults and executors, and contracts hold zero ETH by construction.
+
+Every one of the 32,035 scanned addresses classified by `eth_getCode`:
+
+| class | addresses | zero ETH | below one approve+swap |
+|---|---|---|---|
+| plain EOA (`0x`) | 16,376 | **1,393 (8.5%)** | 2,921 (17.8%) |
+| **EIP-7702 delegated EOA** (`0xef0100…`) | **9,976** | **6,476 (64.9%)** | 6,659 (66.8%) |
+| contract | 5,683 | 5,070 (89.2%) | 5,145 (90.5%) |
+
+Unreadable: 0.
+
+## The finding that reframes the pitch
+
+**9,976 of these addresses are EIP-7702-delegated EOAs, and 65% of them hold zero ETH.**
+
+| delegate | EOAs | entryPoint |
+|---|---|---|
+| `0xe6cae83bde06e4c305530e199d7217f42808555b` | **5,461** | `0x4337084D9E255Ff0702461CF8895CE9E3b5Ff108` |
+| `0x63c0c19a282a1b52b07dd5a65b58948a07dae32b` | 1,002 | canonical 4337 EntryPoint, `VERSION` 1.3.0 |
+| `0x77021100bd87b7008e5e1989d0eb38555d0d0000` | 796 | canonical 4337 EntryPoint |
+| `0x69007702764179f14f51cdce752f4f775d74e139` | 611 | canonical 4337 EntryPoint |
+| `0x000000009b1d0af20d8c6d0a44e162d11f9b8f00` | 464 | CaliburEntry (in Uniswap's own `deployments/4663.md`) |
+
+Every one is a smart-account delegate bound to an ERC-4337 EntryPoint. These wallets transact
+**without holding ETH already** — someone is sponsoring their gas.
+
+So the honest framing is not "wallets are stranded". It is: **gasless is already how a large share
+of this chain transacts, through account abstraction — and a trading app that demands ETH is asking
+users to go backwards.** 55% of the delegated population sits behind a single delegate.
+
+## Chainlink feeds — resolved, with three defects worth stating
+
+36 feeds resolved by reading `BASE_FEED_1()` from each Morpho market's ChainlinkOracleV2 wrapper.
+Prices already include the ERC-8056 `uiMultiplier` per Robinhood's docs; **it is never applied
+again**. AAPL reads 336.4003 against a 336.49 pool quote.
+
+1. **CRCL and CRWV share one feed** (`0x6652edf6…`, "Robinhood CRCL / USD"). Pricing CRWV from it
+   would be wrong. CRWV is excluded from valuation.
+2. **GLD and RDDT are priced by "Uniswap V3 Pool Price in USD"**, not a Chainlink stock feed — a
+   different trust model, flagged rather than mixed in silently.
+3. **Staleness varies by hours**: SGOV 15.34h, SPY 11.29h, TSM 1.75h, QQQ 1.70h, while others are
+   seconds old. Stock feeds do not tick outside market hours. **A fixed staleness window in the
+   oracle guard would reject SPY and SGOV during normal operation** — the guard must be
+   heartbeat-aware per feed. This is a B1 design input, found before B1 was written.
+
+TSLA has Morpho markets but no resolvable `BASE_FEED_1`. UNRESOLVED.
+
+## Still computing
+
+- Cohort value: EOAs (plain + 7702) holding ≥ $10, priced at Chainlink, split stock vs USDG-only.
+  Blocked on a re-scan that saves per-token address sets — pricing only real (address, token)
+  pairs is ~11x fewer reads than the cartesian product.
+- Unique `tx.from` of swap transactions. The earlier "630 recipients" was a count of router
+  destinations, not traders, and is withdrawn.
+- 7-day window extension.
+
+## RPCs — three, by capability
+
+| rpc | serves | does not |
+|---|---|---|
+| canonical | `eth_getLogs` over useful ranges (10k-result cap) | non-archive state; batch cap tightens under load |
+| publicnode | bulk state reads, 30-item batches | `eth_getLogs` (archive token required) |
+| QuickNode | state reads, tx lookups, 30-item batches at 0.21s | **`eth_getLogs` capped to a FIVE BLOCK range** on the free plan |
+
+QuickNode verified `eth_chainId` = `0x1237` from both the Mac and the VPS; file is 0600 on both and
+was never printed. The engine deliberately stays on canonical + publicnode.

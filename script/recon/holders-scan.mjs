@@ -64,6 +64,7 @@ async function rpcBatch(calls, retries = 5) {
   const tickers = Object.keys(CFG.tokens);
   const holders = new Set();
   const perToken = {};
+  const perTokenSets = {};
   let pages = 0, failedPages = 0, logs = 0;
 
   for (const t of tickers) {
@@ -86,12 +87,13 @@ async function rpcBatch(calls, retries = 5) {
       await sleep(PACE);
     }
     perToken[t] = { transfers: n, addresses: seen.size };
+    perTokenSets[t] = [...seen];
     console.error(`  ${t.padEnd(6)} transfers ${String(n).padStart(6)}  addrs ${String(seen.size).padStart(5)}  (running unique ${holders.size})`);
   }
 
   console.error(`\npages ${pages} (${failedPages} failed) · logs ${logs} · unique addresses ${holders.size}`);
   fs.writeFileSync(new URL("./holders-raw.json", import.meta.url),
     JSON.stringify({ at, head, from, window: WINDOW, perToken, pages, failedPages, logs,
-      addresses: [...holders] }, null, 1));
+      addresses: [...holders], perTokenSets }));
   console.error("wrote script/recon/holders-raw.json");
 })();

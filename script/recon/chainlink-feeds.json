@@ -1,0 +1,294 @@
+{
+ "at": "2026-09-24T15:20:58.229Z",
+ "note": "prices already include ERC-8056 uiMultiplier per Robinhood docs; NEVER apply it again",
+ "feeds": {
+  "AAPL": {
+   "feed": "0x4bdbb3150014c6ab2c6d9347b0779c49015a2f3f",
+   "desc": "Robinhood AAPL / USD",
+   "decimals": 8,
+   "answer": "33640032177",
+   "updatedAt": 1790260428,
+   "priceUsd": 336.40032177
+  },
+  "AMD": {
+   "feed": "0x943a29e7ae51a4798823ca9eed2ed533b2a22c72",
+   "desc": "RHAMD / USD",
+   "decimals": 8,
+   "answer": "61145000000",
+   "updatedAt": 1790261973,
+   "priceUsd": 611.45
+  },
+  "AMZN": {
+   "feed": "0xd5a1508ced74c084ebf3cbe853e2c968fb2a651c",
+   "desc": "Robinhood AMZN / USD",
+   "decimals": 8,
+   "answer": "24610700000",
+   "updatedAt": 1790257546,
+   "priceUsd": 246.107
+  },
+  "ASML": {
+   "feed": "0xb4106147e8cce40b7d46124090d373a71b70f87d",
+   "desc": "Robinhood ASML / USD",
+   "decimals": 8,
+   "answer": "171553880635",
+   "updatedAt": 1790257569,
+   "priceUsd": 1715.53880635
+  },
+  "BABA": {
+   "feed": "0x62cc8f9b5f56a33c9c8a60c8b92779f523c4e984",
+   "desc": "Robinhood BABA / USD",
+   "decimals": 8,
+   "answer": "11016500000",
+   "updatedAt": 1790262187,
+   "priceUsd": 110.165
+  },
+  "CLSK": {
+   "feed": "0x810c12d3a554bc47fd39597fe3b3aac4941f50ef",
+   "desc": "Robinhood CLSK / USD",
+   "decimals": 8,
+   "answer": "1404550000",
+   "updatedAt": 1790263121,
+   "priceUsd": 14.0455
+  },
+  "COIN": {
+   "feed": "0xa3a468a452940b7d6b69991207b508c609a98ef2",
+   "desc": "Robinhood COIN / USD",
+   "decimals": 8,
+   "answer": "19545000000",
+   "updatedAt": 1790261918,
+   "priceUsd": 195.45
+  },
+  "CRCL": {
+   "feed": "0x6652edf64ba3731c4f2d3ce821a0fb1f1f6b482a",
+   "desc": "Robinhood CRCL / USD",
+   "decimals": 8,
+   "answer": "9179430000",
+   "updatedAt": 1790262082,
+   "priceUsd": 91.7943
+  },
+  "CRWV": {
+   "feed": "0x6652edf64ba3731c4f2d3ce821a0fb1f1f6b482a",
+   "desc": "Robinhood CRCL / USD",
+   "decimals": 8,
+   "answer": "9179430000",
+   "updatedAt": 1790262082,
+   "priceUsd": 91.7943
+  },
+  "DELL": {
+   "feed": "0x1c6c8cadbe02e19129c39ddb92281ce4c0bf206b",
+   "desc": "Robinhood DELL-USD",
+   "decimals": 8,
+   "answer": "53197323912",
+   "updatedAt": 1790261562,
+   "priceUsd": 531.97323912
+  },
+  "EWY": {
+   "feed": "0xefdf54610b62a7753ec30bdc380847c12d32e1d1",
+   "desc": "Robinhood EWY / USD",
+   "decimals": 8,
+   "answer": "18228855000",
+   "updatedAt": 1790262615,
+   "priceUsd": 182.28855
+  },
+  "GLD": {
+   "feed": "0x9d380f2988fe04c58a69c3c5dc389b8587c76012",
+   "desc": "Uniswap V3 Pool Price in USD",
+   "decimals": 18,
+   "answer": "394253379611000000000",
+   "updatedAt": 1790263257,
+   "priceUsd": 394.25337961099996
+  },
+  "GME": {
+   "feed": "0x42a4652d447a5b0bccf3b265be8530b85a33b3a2",
+   "desc": "Robinhood GME / USD",
+   "decimals": 8,
+   "answer": "2419500000",
+   "updatedAt": 1790261704,
+   "priceUsd": 24.195
+  },
+  "GOOGL": {
+   "feed": "0x11ed6d598ef565dda86fafe7e779303e7cc6b2bd",
+   "desc": "Robinhood GOOGL / USD",
+   "decimals": 8,
+   "answer": "33834560075",
+   "updatedAt": 1790262378,
+   "priceUsd": 338.34560075
+  },
+  "INTC": {
+   "feed": "0x3f390c5c24628ac7c489515402235fead71d1913",
+   "desc": "RHINTC / USD",
+   "decimals": 8,
+   "answer": "12331790000",
+   "updatedAt": 1790262611,
+   "priceUsd": 123.3179
+  },
+  "IONQ": {
+   "feed": "0x22efec4919baf55f360e0edee4abeb26de4971eb",
+   "desc": "Robinhood IONQ / USD",
+   "decimals": 8,
+   "answer": "4287500000",
+   "updatedAt": 1790262199,
+   "priceUsd": 42.875
+  },
+  "META": {
+   "feed": "0x7c38c00c30bee9378381e7b6135d7283356d71b1",
+   "desc": "Robinhood META / USD",
+   "decimals": 8,
+   "answer": "76540721301",
+   "updatedAt": 1790262511,
+   "priceUsd": 765.40721301
+  },
+  "MSFT": {
+   "feed": "0xad6d88eab22aa4867efe807a5311ed64962f740d",
+   "desc": "RHMSFT / USD",
+   "decimals": 8,
+   "answer": "49550953747",
+   "updatedAt": 1790261455,
+   "priceUsd": 495.50953747
+  },
+  "MSTR": {
+   "feed": "0x2521a77f42098357e83bdea7fbb2a38745bf9280",
+   "desc": "Robinhood MSTR / USD",
+   "decimals": 8,
+   "answer": "16049500000",
+   "updatedAt": 1790263037,
+   "priceUsd": 160.495
+  },
+  "MU": {
+   "feed": "0x425eefdcf05ed6526c3ce61af99429a228a6d596",
+   "desc": "RHMU / USD",
+   "decimals": 8,
+   "answer": "105682806936",
+   "updatedAt": 1790262989,
+   "priceUsd": 1056.82806936
+  },
+  "NBIS": {
+   "feed": "0xe1d87b116ba0fe898998f1d140339d1fa1e09705",
+   "desc": "Robinhood NBIS / USD",
+   "decimals": 8,
+   "answer": "24137500000",
+   "updatedAt": 1790263116,
+   "priceUsd": 241.375
+  },
+  "NVDA": {
+   "feed": "0x379ec4f7c378f34a1b47e4f3cbebcbac3e8e9f15",
+   "desc": "RHNVDA / USD",
+   "decimals": 8,
+   "answer": "22197193030",
+   "updatedAt": 1790259144,
+   "priceUsd": 221.9719303
+  },
+  "ORCL": {
+   "feed": "0x4a9abc759e0b7b0ba98b5fd39c419a5d3e962aaf",
+   "desc": "Robinhood ORCL / USD",
+   "decimals": 8,
+   "answer": "13745788726",
+   "updatedAt": 1790260659,
+   "priceUsd": 137.45788726
+  },
+  "PLTR": {
+   "feed": "0x820abedff239034956b7a9d2f0a331f9f075eb4c",
+   "desc": "Robinhood PLTR / USD",
+   "decimals": 8,
+   "answer": "19110500000",
+   "updatedAt": 1790262822,
+   "priceUsd": 191.105
+  },
+  "QQQ": {
+   "feed": "0x80901d846d5d7b030f26b480776ee3b29374c2ae",
+   "desc": "Robinhood QQQ / USD",
+   "decimals": 8,
+   "answer": "73770606590",
+   "updatedAt": 1790257142,
+   "priceUsd": 737.7060659
+  },
+  "RDDT": {
+   "feed": "0x3ff171e03b47e20ac279d75642cea05471d43fb4",
+   "desc": "Uniswap V3 Pool Price in USD",
+   "decimals": 18,
+   "answer": "151569094990950000000",
+   "updatedAt": 1790263257,
+   "priceUsd": 151.56909499095002
+  },
+  "RGTI": {
+   "feed": "0x2a045cf1c49c61c166c036d2f06fa2d2d984f765",
+   "desc": "Robinhood RGTI / USD",
+   "decimals": 8,
+   "answer": "1604500000",
+   "updatedAt": 1790262188,
+   "priceUsd": 16.045
+  },
+  "RKLB": {
+   "feed": "0x045477bf65aef6f4f2386ad0164579e48381cc74",
+   "desc": "Robinhood RKLB / USD",
+   "decimals": 8,
+   "answer": "7123090000",
+   "updatedAt": 1790263230,
+   "priceUsd": 71.2309
+  },
+  "SGOV": {
+   "feed": "0xa0df4ee0fff975306345875e3548fcc519577a11",
+   "desc": "Robinhood SGOV-USD",
+   "decimals": 8,
+   "answer": "10113835594",
+   "updatedAt": 1790208064,
+   "priceUsd": 101.13835594
+  },
+  "SLV": {
+   "feed": "0x209b73908e92ae021826ed79609845451ecba2ce",
+   "desc": "Robinhood SLV / USD",
+   "decimals": 8,
+   "answer": "5701990000",
+   "updatedAt": 1790262587,
+   "priceUsd": 57.0199
+  },
+  "SNDK": {
+   "feed": "0xfb133fa4b7b385802b693a293606682df47109a3",
+   "desc": "RHSNDK / USD",
+   "decimals": 8,
+   "answer": "176114500000",
+   "updatedAt": 1790262421,
+   "priceUsd": 1761.145
+  },
+  "SPCX": {
+   "feed": "0x42a95341ff361e81fd934f39943c5c98f6991844",
+   "desc": "Robinhood SPCX / USD",
+   "decimals": 8,
+   "answer": "14717150000",
+   "updatedAt": 1790261654,
+   "priceUsd": 147.1715
+  },
+  "SPY": {
+   "feed": "0x319724394d3a0e3669269846abe664cd621f9f6a",
+   "desc": "RHSPY / USD",
+   "decimals": 8,
+   "answer": "76669992468",
+   "updatedAt": 1790222646,
+   "priceUsd": 766.69992468
+  },
+  "TSM": {
+   "feed": "0x874cf94aa8ec88fd9560094dd065f2fb3e41fc2f",
+   "desc": "Robinhood TSM / USD",
+   "decimals": 8,
+   "answer": "44331077688",
+   "updatedAt": 1790256994,
+   "priceUsd": 443.31077688
+  },
+  "USAR": {
+   "feed": "0xa994d3684e8400a6c8078226925779fdee682dd9",
+   "desc": "Robinhood USAR-USD",
+   "decimals": 8,
+   "answer": "1532600000",
+   "updatedAt": 1790262196,
+   "priceUsd": 15.326
+  },
+  "USO": {
+   "feed": "0x6d054decb74cf8ef3675b0abc100e02921176edf",
+   "desc": "RHUSO / USD",
+   "decimals": 8,
+   "answer": "15409075000",
+   "updatedAt": 1790262176,
+   "priceUsd": 154.09075
+  }
+ }
+}

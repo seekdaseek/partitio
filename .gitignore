@@ -17,3 +17,5 @@ package-lock.json
 # local recon artifacts
 docs/*.raw.json
 .DS_Store
+qn_rpc
+*_rpc
