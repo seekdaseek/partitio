@@ -29,6 +29,9 @@ selector is `stylusVersion()`.
 **Still required before G1 passes:** `cargo stylus check`, then deploy + activate on mainnet with the
 throwaway key, and record the activation cost. Until that runs, the Stylus module stays a stretch goal.
 
+**Blocked on:** a funded throwaway deployer. The key itself is created on the Mac and never echoed;
+funding it with dust ETH is Sergiu's action. Nothing else in P0 depends on it.
+
 ---
 
 ## G2 — Uniswap and Morpho addresses
@@ -143,10 +146,90 @@ claimed as zero.
 
 ---
 
-## G5 — anvil fork
+## G5 — Fork execution
 
-**Status: UNTESTED.**
+**Status: PASS.**
+
+`anvil --fork-url https://rpc.mainnet.chain.robinhood.com` boots and serves chain id 4663 at the live
+head. The suite runs through `forge test --fork-url` directly, so anvil is not a dependency.
+
+`test/G5Fork.t.sol` executes real v3 swaps **from a contract**, which is the entire premise of partitio
+— an EOA doing this would prove nothing.
+
+| venue | 1 AAPL → USDG | gas |
+|---|---|---|
+| canonical Uniswap v3, fee 500 | **336.815749** | 428 874 |
+| `up-v3` fork, fee 500 / ts 60 | **336.892866** | 536 484 |
+
+`test_G5_twoVenuesQuoteDifferently` asserts the two differ at the same block. They do, by 7.7e-5 USDG
+per AAPL (~2.3 bps) — small at 1 unit, and it is exactly this gap that widens with size. This is the
+split premise reduced to a passing assertion rather than a claim.
+
+---
 
 ## G6 — Yardsticks (Kyber, LI.FI)
 
-**Status: UNTESTED.**
+**Status: PASS, with an operational caveat.**
+
+Both reachable **from the VPS**, AAPL → USDG at ~$1k (2.968 AAPL):
+
+| yardstick | amountOut | note |
+|---|---|---|
+| KyberSwap all-sources | 999.906468 USDG | routed via `up-v3` pool `0x19d55aba…` |
+| LI.FI `advanced/routes` | 997.829503 USDG | quotes AAPL at $337.0846 |
+
+**Caveat:** Kyber returns HTTP 503 from the Mac and `code 50301 service temporarily overloaded` under
+even light sequential load from the VPS (4 of 6 probes failed in one burst). The evidence engine must
+pace requests and back off, and must record a failed yardstick call as `unmeasured` — never as 0.
+
+---
+
+## G4 addendum — the venue map is materially incomplete
+
+Discovered while running G6, not by looking for it: the Kyber route for a $374k TSLA sell touches
+**nine** distinct exchange families on 4663. My G4 sweep covers three of them.
+
+| Kyber `exchange` | identifier form | in G4 sweep? | reachable from a contract? |
+|---|---|---|---|
+| `uniswapv3` | pool address | yes | yes |
+| `uniswap-v4` | poolId | yes (hookless only) | yes |
+| `up-v3` | pool address | **no** | yes |
+| `uniswap-v4-fables` | poolId | **no** (hook pool) | yes |
+| `uniswap-v4-arrakis` | poolId | **no** (hook pool) | yes |
+| `fermi-prop` | pair address | partly — 11 of ≥15 | yes |
+| `metric-propamm` | pair address | **no** | yes |
+| `pmm-19` | *synthetic* `pmm_19_<tokenA>_<tokenB>` | n/a | **no — off-chain RFQ** |
+| `kipseli-prop` | *synthetic* `kipseli-prop_<tokenA>_<tokenB>` | n/a | **no — off-chain RFQ** |
+
+Two consequences, both important:
+
+1. **The product boundary is now measurable, not asserted.** `pmm-19` and `kipseli-prop` are addressed
+   by synthetic identifiers, not contracts. No on-chain router can reach them — only an API can. Every
+   other family is a contract partitio can call. The honest claim is therefore *"partitio routes the
+   on-chain-reachable subset"*, and the gap to Kyber all-sources is the value of the off-chain makers.
+   That gap is a number the evidence engine can measure, per ticker, per size.
+
+2. **Kyber is a venue-discovery source, not a runtime dependency.** Hook poolIds cannot be enumerated
+   (poolId derivation needs the hook address as an input, and both public RPCs refuse `eth_getLogs`).
+   Kyber hands them over directly. Harvesting them once at registry-build time keeps execution
+   entirely on-chain.
+
+### `up-v3` is a standard v3 fork behind minimal proxies
+
+Factory `0x1ac9dB4a2608ba45D6127B1737949b51Bb54B7F3` — it does **not** expose `getPool` or
+`feeAmountTickSpacing` (both revert), so its pools cannot be enumerated the canonical way.
+
+Pool `0x19d55aba3e5d2c389b7011c634725136dfdcae33` is a 45-byte EIP-1167 clone of
+`0x11725976bf1f38c4ab78d1f480bc5883d70d9dc3`, whose bytecode contains the full standard v3 pool
+selector set: `swap`, `slot0`, `liquidity`, `fee`, `tickSpacing`, `ticks`, `tickBitmap`,
+`uniswapV3SwapCallback`. Two deviations from canonical v3:
+
+- `slot0()` returns **6** fields, not 7 (no `feeProtocol`). A shared 7-field signature fails to decode.
+- fee 500 carries tickSpacing **60**, not 10. The canonical fee→tickSpacing mapping does not hold.
+
+**Security consequence — this changes the design.** The brief specifies that the swap callback verify
+`msg.sender` is the canonical pool computed from factory + tokens + fee. That CREATE2 derivation is
+**invalid for clone-based forks**: an up-v3 pool's address is a function of the clone deployment, not
+of the pool key. Callback authentication must therefore be **registry membership** — `msg.sender` must
+be a venue the registry holds — rather than address derivation. Invariant I4 is restated accordingly:
+*a callback from any address not in the venue registry reverts.*
