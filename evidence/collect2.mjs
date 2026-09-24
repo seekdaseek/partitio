@@ -70,7 +70,15 @@ const ZEROX_KEY = (() => {
   }
   return null;
 })();
+// 0x supports chain 4663 but REFUSES every tokenized stock in both directions on legal grounds:
+// BUY_TOKEN_NOT_AUTHORIZED_FOR_TRADE / SELL_TOKEN_NOT_AUTHORIZED_FOR_TRADE, verified with a live
+// key on AAPL and SPY (USDG<->WETH returns prices fine). That is policy, not availability, so it
+// is recorded once as a categorical refusal rather than sampled forever. See docs/GATES.md.
+const ZEROX_REFUSES_STOCKS = true;
 async function zerox(tokenIn, tokenOut, amountIn) {
+  if (ZEROX_REFUSES_STOCKS)
+    return { out: null, status: "unmeasured", cls: "asset-class-refused",
+             err: "0x: TOKEN_NOT_AUTHORIZED_FOR_TRADE on tokenized stocks (verified 2026-09-24)" };
   if (!ZEROX_KEY) return { out: null, status: "unmeasured", cls: "no-api-key", err: "ZEROX_API_KEY not set" };
   try {
     const u = `https://api.0x.org/swap/permit2/price?chainId=4663&sellToken=${tokenIn}&buyToken=${tokenOut}&sellAmount=${amountIn}`;
