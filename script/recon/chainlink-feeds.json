@@ -1,6 +1,6 @@
 {
  "at": "2026-09-24T15:20:58.229Z",
- "note": "prices already include ERC-8056 uiMultiplier per Robinhood docs; NEVER apply it again",
+ "note": "prices already include ERC-8056 uiMultiplier per Robinhood docs; NEVER apply it again | CRWV corrected 2026-09-24: an earlier pass mapped it to the CRCL feed by taking the FIRST market per ticker, which happened to be a dead miswired market. TSLA added from the sampler cross-check.",
  "feeds": {
   "AAPL": {
    "feed": "0x4bdbb3150014c6ab2c6d9347b0779c49015a2f3f",
@@ -67,12 +67,12 @@
    "priceUsd": 91.7943
   },
   "CRWV": {
-   "feed": "0x6652edf64ba3731c4f2d3ce821a0fb1f1f6b482a",
-   "desc": "Robinhood CRCL / USD",
+   "feed": "0xe1b3aabcafad1c94708dc1367dcff8aa4407487c",
+   "desc": "Robinhood CRWV / USD",
    "decimals": 8,
-   "answer": "9179430000",
-   "updatedAt": 1790262082,
-   "priceUsd": 91.7943
+   "answer": "8707950000",
+   "updatedAt": null,
+   "priceUsd": 87.0795
   },
   "DELL": {
    "feed": "0x1c6c8cadbe02e19129c39ddb92281ce4c0bf206b",
@@ -289,6 +289,14 @@
    "answer": "15409075000",
    "updatedAt": 1790262176,
    "priceUsd": 154.09075
+  },
+  "TSLA": {
+   "feed": "0x4a1166a659a55625345e9515b32adecea5547c38",
+   "desc": "RHTSLA / USD",
+   "decimals": 8,
+   "answer": null,
+   "updatedAt": null,
+   "priceUsd": 377.89
   }
  }
 }

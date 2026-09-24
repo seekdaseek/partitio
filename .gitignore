@@ -19,3 +19,7 @@ docs/*.raw.json
 .DS_Store
 qn_rpc
 *_rpc
+
+# private security findings - never committed
+docs/FINDINGS.md
+docs/DISCLOSURE*.md
