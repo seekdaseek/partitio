@@ -77,6 +77,42 @@ Solidity zero-initialises. No behaviour change; left as-is rather than adding no
 - **Nothing at rest.** Every output transfer is followed by a zero-balance assertion that reverts
   on dust.
 
+## Bugs found by the tests that were asked for, not by review
+
+Three defects in GaslessEntry, each caught by a test written to the spec rather than to the code.
+
+### 1. The fee was charged in the wrong asset on a sell
+
+The fee was always taken from `tokenIn`, so selling AAPL would have paid the relayer **in AAPL**.
+Now the fee is always USDG: deducted from the input on a buy, and from the USDG output on a sell.
+`minOut` on a sell is checked against the **net** the user receives, so a fee can never push them
+under the floor they signed for. A route with no USDG on either side reverts `FeeNotPayableInUSDG`
+rather than silently charging in whatever asset was moving.
+
+### 2. The aggregator path skipped the oracle guard entirely
+
+The guard lives inside the router, so a route that went to an aggregator and never touched the
+router was never guarded. Under a loose `minOut` that would have accepted an arbitrarily bad fill.
+`OracleGuard.enforce` is now applied to the aggregator result too, on the measured `spent`/`got`.
+
+Related: the acceptance bar for an aggregator leg was `out.minOut`, which is the *user's* floor and
+usually loose enough for a poor fill to slip under. It is now `max(minOut, aggMinOut)` where
+`aggMinOut` is what partitio itself would return — an aggregator route is only worth taking if it
+beats our own.
+
+### 3. Partial aggregator fills broke the fallback twice over
+
+Found by `test_underDeliveringAggregatorFallsBackToPartitio`, which failed three times before the
+code was right:
+
+- **Legs were not rescaled.** They are quoted for the full input; after a partial fill only the
+  remainder is available, so the router pulled more than the approval and reverted
+  `InsufficientAllowance`. `_scaleLegs` now rescales proportionally, with rounding dust added to
+  the last leg so the legs sum to the target exactly.
+- **The fallback spent the reserved fee.** `remaining` read the whole balance including the fee
+  earmarked for the relayer, so the payout at the end reverted `InsufficientFunds`. The reserve is
+  now excluded.
+
 ## Not yet done
 
 - Echidna or Medusa property fuzzing of GaslessEntry and the router invariants.

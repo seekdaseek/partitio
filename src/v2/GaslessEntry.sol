@@ -86,6 +86,7 @@ contract GaslessEntry is EIP712, ReentrancyGuardTransient {
     error OutputBelowMin(address token, uint256 got, uint256 minOut);
     error AggregatorNotAllowed(address target);
     error DustLeftBehind(address token, uint256 amount);
+    error FeeNotPayableInUSDG();
 
     constructor(IUSDG usdg, PartitioRouterV2 router, address[4] memory aggregators)
         EIP712("partitio", "2")
@@ -137,6 +138,7 @@ contract GaslessEntry is EIP712, ReentrancyGuardTransient {
     struct Route {
         address aggregator;      // address(0) = use partitio
         bytes callData;
+        uint256 aggMinOut;       // what partitio would give for the same input, per the relayer
         PartitioRouterV2.Leg[] legs;   // partitio legs, also the fallback
     }
 
@@ -162,19 +164,38 @@ contract GaslessEntry is EIP712, ReentrancyGuardTransient {
 
         _pullIn(o, a, oh);
 
+        // THE FEE IS ALWAYS PAID IN USDG, never in stock.
+        //   buy  (tokenIn == USDG): taken off the input, before the swap.
+        //   sell (tokenIn != USDG): taken out of the USDG output, after the swap.
+        // A route with no USDG on either side cannot pay a fee at all, and says so rather than
+        // silently charging the user in whatever asset happened to be moving.
+        bool feeFromInput = (o.tokenIn == address(USDG));
+        if (fee != 0 && !feeFromInput && _usdgOutputIndex(o) == type(uint256).max) {
+            revert FeeNotPayableInUSDG();
+        }
+
         outs = new uint256[](o.outputs.length);
-        uint256 spendable = o.amountIn - fee;
+        uint256 spendable = feeFromInput ? o.amountIn - fee : o.amountIn;
         bool usedAgg;
 
         // Single-output orders may use the relayer's aggregator route; baskets always use partitio,
         // because an aggregator route is quoted for one pair and cannot be split by weight safely.
         if (o.outputs.length == 1) {
-            (outs[0], usedAgg) = _fillSingle(o, route, spendable);
+            (outs[0], usedAgg) = _fillSingle(o, route, spendable, feeFromInput ? fee : 0);
         } else {
             for (uint256 i = 0; i < o.outputs.length; i++) {
                 uint256 part = (spendable * o.outputs[i].weightBps) / 10_000;
-                outs[i] = _viaRouter(o.tokenIn, o.outputs[i], _legsFor(route, i), part);
+                outs[i] = _viaRouter(o.tokenIn, o.outputs[i], route.legs, part);
             }
+        }
+
+        // On a sell, the fee comes out of the USDG leg before the user is paid, so `minOut` is
+        // checked against what the user ACTUALLY receives, not against the gross fill.
+        if (fee != 0 && !feeFromInput) {
+            uint256 ui = _usdgOutputIndex(o);
+            if (outs[ui] < fee) revert FeeAboveMax(fee, outs[ui]);
+            outs[ui] -= fee;
+            IERC20(address(USDG)).safeTransfer(msg.sender, fee);
         }
 
         for (uint256 i = 0; i < o.outputs.length; i++) {
@@ -184,7 +205,7 @@ contract GaslessEntry is EIP712, ReentrancyGuardTransient {
             if (left != 0) revert DustLeftBehind(o.outputs[i].token, left);
         }
 
-        if (fee != 0) IERC20(o.tokenIn).safeTransfer(msg.sender, fee);
+        if (fee != 0 && feeFromInput) IERC20(o.tokenIn).safeTransfer(msg.sender, fee);
         uint256 dust = IERC20(o.tokenIn).balanceOf(address(this));
         if (dust != 0) IERC20(o.tokenIn).safeTransfer(o.owner, dust);
 
@@ -192,6 +213,13 @@ contract GaslessEntry is EIP712, ReentrancyGuardTransient {
     }
 
     // ------------------------------------------------------------------ internals
+
+    function _usdgOutputIndex(Order calldata o) internal view returns (uint256) {
+        for (uint256 i = 0; i < o.outputs.length; i++) {
+            if (o.outputs[i].token == address(USDG)) return i;
+        }
+        return type(uint256).max;
+    }
 
     function _pullIn(Order calldata o, Auth calldata a, bytes32 oh) internal {
         if (o.tokenIn == address(USDG)) {
@@ -212,22 +240,43 @@ contract GaslessEntry is EIP712, ReentrancyGuardTransient {
         IERC20(o.tokenIn).safeTransferFrom(o.owner, address(this), o.amountIn);
     }
 
-    function _legsFor(Route calldata route, uint256) internal pure returns (PartitioRouterV2.Leg[] calldata) {
-        return route.legs;
+    /// @notice Copy the caller's legs, rescaled so they sum to exactly `target`.
+    /// @dev The legs are quoted for the full input. After a PARTIAL aggregator fill only the
+    /// returned remainder is available, and handing the router the original amounts makes it pull
+    /// more than the approval — which is precisely how this was found. Any rounding dust from the
+    /// division is added to the last leg so the legs always sum to `target` exactly.
+    function _scaleLegs(PartitioRouterV2.Leg[] calldata legs, uint256 target)
+        internal pure returns (PartitioRouterV2.Leg[] memory out)
+    {
+        uint256 orig;
+        for (uint256 i = 0; i < legs.length; i++) orig += legs[i].amountIn;
+        out = new PartitioRouterV2.Leg[](legs.length);
+        if (orig == 0 || legs.length == 0) return out;
+
+        uint256 assigned;
+        for (uint256 i = 0; i < legs.length; i++) {
+            uint256 amt = i == legs.length - 1 ? target - assigned : (legs[i].amountIn * target) / orig;
+            assigned += amt;
+            out[i] = PartitioRouterV2.Leg({venue: legs[i].venue, proof: legs[i].proof, amountIn: amt});
+        }
     }
 
     function _viaRouter(
         address tokenIn, Output calldata out, PartitioRouterV2.Leg[] calldata legs, uint256 amountIn
     ) internal returns (uint256) {
+        PartitioRouterV2.Leg[] memory scaled = _scaleLegs(legs, amountIn);
         IERC20(tokenIn).forceApprove(address(ROUTER), amountIn);
         uint256 got = ROUTER.swapExactIn(
-            tokenIn, out.token, legs, out.guard, 0, address(this), block.timestamp
+            tokenIn, out.token, scaled, out.guard, 0, address(this), block.timestamp
         );
         IERC20(tokenIn).forceApprove(address(ROUTER), 0);
         return got;
     }
 
-    function _fillSingle(Order calldata o, Route calldata route, uint256 spendable)
+    /// @param feeReserve tokenIn already earmarked for the relayer and NOT available to route.
+    /// Without it the fallback spends the fee as well and the payout at the end reverts with the
+    /// token's own InsufficientFunds — which is how this was found.
+    function _fillSingle(Order calldata o, Route calldata route, uint256 spendable, uint256 feeReserve)
         internal
         returns (uint256 got, bool usedAgg)
     {
@@ -245,15 +294,32 @@ contract GaslessEntry is EIP712, ReentrancyGuardTransient {
         if (ok) {
             got = IERC20(out.token).balanceOf(address(this)) - snapshot;
             uint256 spent = spendable - IERC20(o.tokenIn).balanceOf(address(this));
-            // Accept the aggregator only if it cleared the user's floor. Otherwise unwind to
-            // partitio with whatever tokenIn is left, in this same transaction.
-            if (got >= out.minOut && spent <= spendable) {
+            // The bar is NOT the user's minOut — that floor is usually loose enough for a poor
+            // aggregator fill to slip under it. The bar is `aggMinOut`: what partitio itself would
+            // return for the same input, asserted by the relayer that quoted both. An aggregator
+            // route is only worth taking if it beats our own route.
+            //
+            // A relayer that understates aggMinOut only makes its own route less likely to be
+            // used; a relayer that overstates it forces the fallback. Either way the user is still
+            // protected by their own minOut and by the oracle floor, so this field cannot be used
+            // against them.
+            uint256 bar = out.minOut > route.aggMinOut ? out.minOut : route.aggMinOut;
+            if (got >= bar && spent <= spendable && spent > 0) {
+                // THE GUARD APPLIES TO THE AGGREGATOR PATH TOO. It lives inside the router, so a
+                // route that never touches the router would otherwise skip it entirely — the
+                // first version of this function did exactly that, which would have let a stale
+                // or hostile aggregator deliver an arbitrarily bad fill under a loose minOut.
+                OracleGuard.enforce(
+                    out.guard, spent, got,
+                    IERC20Metadata(o.tokenIn).decimals(), IERC20Metadata(out.token).decimals()
+                );
                 return (got, true);
             }
-            emit AggregatorLegRejected(route.aggregator, got, out.minOut);
+            emit AggregatorLegRejected(route.aggregator, got, bar);
         }
 
-        uint256 remaining = IERC20(o.tokenIn).balanceOf(address(this));
+        uint256 bal = IERC20(o.tokenIn).balanceOf(address(this));
+        uint256 remaining = bal > feeReserve ? bal - feeReserve : 0;
         if (remaining > 0) {
             got += _viaRouter(o.tokenIn, out, route.legs, remaining);
         }

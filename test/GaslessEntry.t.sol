@@ -95,7 +95,7 @@ contract GaslessEntryTest is Test {
     }
 
     function _route(uint256 a0, uint256 a1) internal view returns (GaslessEntry.Route memory) {
-        return GaslessEntry.Route({aggregator: address(0), callData: "", legs: _legs(a0, a1)});
+        return GaslessEntry.Route({aggregator: address(0), callData: "", aggMinOut: 0, legs: _legs(a0, a1)});
     }
 
     // ------------------------------------------------------------------ tests
@@ -198,7 +198,7 @@ contract GaslessEntryTest is Test {
         deal(USDG, user, amt);
         GaslessEntry.Order memory o = _order(amt, 5e6, 0, bytes32(uint256(8)));
         GaslessEntry.Route memory r = GaslessEntry.Route({
-            aggregator: address(0xDEAD), callData: hex"00", legs: _legs(amt - 1e6, 0)});
+            aggregator: address(0xDEAD), callData: hex"00", aggMinOut: 0, legs: _legs(amt - 1e6, 0)});
         GaslessEntry.Auth memory a = _auth(o);
         vm.expectRevert(abi.encodeWithSelector(GaslessEntry.AggregatorNotAllowed.selector, address(0xDEAD)));
         vm.prank(relayer);
@@ -214,6 +214,7 @@ contract GaslessEntryTest is Test {
         GaslessEntry.Route memory r = GaslessEntry.Route({
             aggregator: KYBER_ROUTER,
             callData: hex"deadbeef",                 // garbage: the call will revert
+            aggMinOut: 0,
             legs: _legs(amt - fee, 0)
         });
         vm.prank(relayer);

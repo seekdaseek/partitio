@@ -123,7 +123,7 @@ contract PartitioRouterV2 is IUniswapV3SwapCallback, IUnlockCallback {
     function swapExactIn(
         address tokenIn,
         address tokenOut,
-        Leg[] calldata legs,
+        Leg[] memory legs,
         OracleGuard.Params calldata guard,
         uint256 minOut,
         address recipient,
