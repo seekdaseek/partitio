@@ -210,3 +210,72 @@ nothing downstream today. That window closes the moment the web app signs its fi
 - **No symbolic execution or formal verification.** Medusa only.
 - R-12's ordering constraint is unfixed on-chain by design; it needs the relayer to process one
   order per owner at a time.
+
+---
+
+## 9. Final batch: maxFeedAge, minOut > 0, and the 4f answers
+
+### Two new signed protections
+
+**`minOut > 0` is now required.** A zero floor was the *root* of the sliver extraction both hunters
+found: every defence the signer had left was the oracle band, and an honest price on a tiny amount
+clears it. One wei satisfies the rule, so this is a stated-intent requirement rather than a size
+rule — the contract will not guess a floor for you, but it will not accept an order that declines
+to state one. `test_minOutZeroIsRefused`, `test_oneWeiMinOutIsAccepted`.
+
+**`maxFeedAge` is signed in the order.** The floor is computed at FILL time, from a feed the signer
+cannot see when they sign, at a block the relayer chooses. On a BUY the floor is `amountIn / price`,
+so a stale-HIGH reference produces a LOWER floor: if the market gaps down and the feed has not
+caught up, the relayer is handed more stock than the reference says and keeps the difference.
+`enforce` returned `updatedAt` and its caller discarded it, so the signer had no way to bound it.
+
+It is distinct from `MAX_AGE_SECONDS`: that is the library's absolute "is this feed alive at all"
+ceiling and protects everybody; `maxFeedAge` is the signer's own bound and can only be tighter.
+`test_maxFeedAgeStopsARelayerWaitingForTheFeedToGoStale` is the one that matters — same signature,
+same route, only the clock moved, and the *deadline has not passed*, so it is demonstrably the
+reference age that rejected it.
+
+This is also what makes long-lived orders safe, and therefore what makes gasless limit buys
+possible at all.
+
+### Client defaults, in one place
+
+`relayer/order.mjs` `marketOrderDefaults()`: deadline now + 120s, `maxFeedAge` = feed age at quote
++ deadline + 60s, `minOut` = quoted net x (1 − slippage) with slippage defaulting to 50 bps.
+`rejectReasonForMarketOrder()` refuses a zero `minOut`, a zero `maxFeedAge`, or slippage above
+300 bps before anything is signed.
+
+### 4f, answered from source
+
+| question | answer | where |
+|---|---|---|
+| Can a new contract call router v2 permissionlessly with its own legs? | **Yes.** `swapExactIn` is `external` with no caller restriction — zero `onlyOwner` or `require(msg.sender…)` in the file. | `PartitioRouterV2.sol:187` |
+| Can GaslessEntry reach a new target without a redeploy? | **No.** `ROUTER` and `AGG0..AGG3` are all `immutable`. | `GaslessEntry.sol:74-78` |
+| Max order deadline? | **None.** The only check is `block.timestamp > o.deadline`. | `GaslessEntry.sol:152` |
+| Are order nonces unordered? | **Yes.** Replay protection is `mapping(bytes32 => bool) executed` keyed by the order hash, and the EIP-3009 nonce *is* that hash — random, not sequential. | `GaslessEntry.sol:80,161` |
+| Can one user hold several open 3009-funded buy orders? | **Yes.** Distinct salts give distinct hashes give distinct 3009 nonces, and `receiveWithAuthorization` consumes no sequential counter. | — |
+
+**So gasless limit buys are relayer + UI work only, and no contract change is needed.** The
+one-line change that would have *blocked* them — a hard deadline cap — is deliberately NOT added:
+`maxFeedAge` is the bound that makes a long-lived order safe, and it bounds the thing that actually
+matters (the reference the fill is priced against) rather than the calendar.
+
+Note the asymmetry this creates and accept it knowingly: the router is permissionlessly callable by
+any future contract, so a Stylus `swapOnchain` could use it without a redeploy, but GaslessEntry
+cannot reach a new target. Anything that wants to be inside the gasless path has to be there at
+deploy time.
+
+### Wallet prompts: the pitch says one signature, and that is not true
+
+A buy takes **two**: the order signature (`ECDSA.recover` at `GaslessEntry.sol:164`) and the EIP-3009
+authorization (`:254`). A sell takes **two**: the order signature and the EIP-2612 permit (`:263`).
+
+A one-prompt buy is *possible* — the 3009 nonce already IS the order hash, so a user signing the
+authorization is cryptographically committing to the order, and the separate order signature could
+be dropped for the USDG path. It is not being done in this batch: it removes the `ECDSA.recover`
+that `test_cannotPullFromAVictimWithAStandingAllowance` pins, it cannot work for sells (EIP-2612
+has no field to carry an order hash), and it is not the kind of change to make in a freeze.
+
+**The pitch gets reworded, not the contract**: "two signatures, zero gas, no ETH ever". The
+honest claim is that the user never needs ETH and never sends a transaction, which is the part that
+is actually unusual.

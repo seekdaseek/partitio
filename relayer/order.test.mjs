@@ -9,12 +9,14 @@
 import {
   scaleLegsToSpendable,
   spendableFor,
-  selfTest,
-  keccakUtf8,
   GUARD_TYPEHASH,
   ORDER_TYPEHASH,
   hashOrder,
 } from "./order.mjs";
+
+// The keccak vectors and the `cast` cross-check moved to relayer/parity.test.mjs when the
+// hand-rolled implementation was replaced by viem. This file owns the arithmetic: leg scaling and
+// the spendable formula, neither of which is crypto.
 
 let failures = 0;
 const check = (name, ok, detail = "") => {
@@ -35,11 +37,8 @@ function mulberry32(seed) {
   };
 }
 
-console.log("keccak self-test");
-selfTest();
-check("keccak vectors", true);
+console.log("typehash shape (parity with the contract lives in parity.test.mjs)");
 check("typehashes are 32 bytes", GUARD_TYPEHASH.length === 66 && ORDER_TYPEHASH.length === 66);
-check("a wrong type string gives a different hash", keccakUtf8("Guard(uint256 maxDevBp)") !== GUARD_TYPEHASH);
 
 // ---------------------------------------------------------------- spendableFor
 
@@ -150,20 +149,20 @@ for (const amt of [12_345_678n, 500_000_001n, 999_999_999n, 7n]) {
 
 console.log("hashOrder");
 const order = {
-  owner: "0x000000000000000000000000000000000000dEaD",
+  owner: "0x000000000000000000000000000000000000dead",
   tokenIn: USDG,
   amountIn: 1_000_000_000n,
   tokenOut: AAPL,
-  minOut: 0n,
+  minOut: 1n,
   maxFeeUsdg: 5_000_000n,
   deadline: 1_790_000_000n,
   salt: "0x" + "11".repeat(32),
-  guard: { maxDevBps: 300n },
+  guard: { maxDevBps: 300n, maxFeedAge: 3600n },
 };
-const h1 = hashOrder(order, "0x000000000000000000000000000000000000BEEF");
-const h2 = hashOrder(order, "0x000000000000000000000000000000000000BEEF");
-const h3 = hashOrder(order, "0x000000000000000000000000000000000000CAFE");
-const h4 = hashOrder({ ...order, minOut: 1n }, "0x000000000000000000000000000000000000BEEF");
+const h1 = hashOrder(order, "0x000000000000000000000000000000000000beef");
+const h2 = hashOrder(order, "0x000000000000000000000000000000000000beef");
+const h3 = hashOrder(order, "0x000000000000000000000000000000000000cafe");
+const h4 = hashOrder({ ...order, minOut: 2n }, "0x000000000000000000000000000000000000beef");
 check("hashOrder is deterministic", h1 === h2);
 check("hashOrder binds the verifying contract", h1 !== h3);
 check("hashOrder binds every field (minOut)", h1 !== h4);

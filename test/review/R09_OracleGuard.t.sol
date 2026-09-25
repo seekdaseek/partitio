@@ -22,7 +22,7 @@ contract R09_OracleGuard is Test {
 
     /// Params is now just the band: the feed and the direction are the router's to supply.
     function _p(uint256 bps) internal pure returns (OracleGuard.Params memory) {
-        return OracleGuard.Params({maxDevBps: bps});
+        return OracleGuard.Params({maxDevBps: bps, maxFeedAge: 120 hours});
     }
 
     // ---------------------------------------------------------------- R-09

@@ -89,10 +89,13 @@ contract GaslessSellTest is Test {
     function _sellOrder(uint256 amountIn, uint256 maxFee, uint256 minOut, bytes32 salt)
         internal view returns (GaslessEntry.Order memory o)
     {
+        // The contract refuses minOut == 0 outright now (it was the root of the sliver
+        // extraction), so a test that means "effectively no floor" says one wei.
+        if (minOut == 0) minOut = 1;
         o = GaslessEntry.Order({
             owner: user, tokenIn: AAPL, amountIn: amountIn, tokenOut: USDG, minOut: minOut,
             maxFeeUsdg: maxFee, deadline: block.timestamp + 600, salt: salt,
-            guard: OracleGuard.Params({maxDevBps: 300})});
+            guard: OracleGuard.Params({maxDevBps: 300, maxFeedAge: 120 hours})});
     }
 
     function _sellAuth(GaslessEntry.Order memory o) internal view returns (GaslessEntry.Auth memory a) {
@@ -227,9 +230,9 @@ contract AggregatorFallbackTest is Test {
         deal(USDG, user, amt);
 
         GaslessEntry.Order memory o = GaslessEntry.Order({
-            owner: user, tokenIn: USDG, amountIn: amt, tokenOut: AAPL, minOut: 0,
+            owner: user, tokenIn: USDG, amountIn: amt, tokenOut: AAPL, minOut: 1,
             maxFeeUsdg: 5e6, deadline: block.timestamp + 600, salt: bytes32(uint256(30)),
-            guard: OracleGuard.Params({maxDevBps: 300})});
+            guard: OracleGuard.Params({maxDevBps: 300, maxFeedAge: 120 hours})});
 
         bytes32 oh = entry.hashOrder(o);
         (uint8 v, bytes32 r, bytes32 s) = vm.sign(userPk, oh);

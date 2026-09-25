@@ -34,6 +34,18 @@ library OracleGuard {
     /// preference rather than a fact about the trade.
     struct Params {
         uint256 maxDevBps;
+        /// The oldest reference the SIGNER will accept, in seconds. Distinct from MAX_AGE_SECONDS
+        /// below, which is this library's absolute "is the feed alive at all" ceiling: that one
+        /// protects everybody, this one is the signer's own bound and can only be tighter.
+        ///
+        /// It exists because the floor is computed at FILL time, from a feed the signer cannot see
+        /// when they sign, at a block the relayer chooses. On a BUY the floor is amountIn / price,
+        /// so a stale-HIGH reference produces a LOWER floor: if the market gaps down and the feed
+        /// has not caught up, the relayer is handed more stock than the reference says and keeps
+        /// the difference. `enforce` used to return `updatedAt` and its caller discarded it, so a
+        /// signer had no way to say "only fill me against a reference no older than N" - which is
+        /// precisely what a long-lived order needs.
+        uint256 maxFeedAge;
     }
 
     /// The true price can sit this far from the last answer without the feed updating at all,
@@ -62,6 +74,7 @@ library OracleGuard {
     error FeedNeverUpdated();
     error FeedDead(uint256 updatedAt, uint256 age, uint256 maxAge);
     error FeedFromTheFuture(uint256 updatedAt, uint256 nowTs, uint256 tolerance);
+    error FeedOlderThanSignerAllows(uint256 age, uint256 maxFeedAge);
     error BandTooTight(uint256 given, uint256 floorBps);
     error BandTooWide(uint256 given, uint256 maxBps);
     error BelowOracleFloor(uint256 got, uint256 floorOut, uint256 updatedAt);
@@ -126,6 +139,13 @@ library OracleGuard {
 
         uint256 ref;
         (ref, updatedAt) = oracleOut(feed, stockIsInput, amountIn, decIn, decOut);
+
+        // The signer's own staleness bound, checked on top of the library ceiling. Evaluated after
+        // oracleOut so the future-timestamp and dead-feed cases keep their own specific errors.
+        if (block.timestamp > updatedAt && block.timestamp - updatedAt > p.maxFeedAge) {
+            revert FeedOlderThanSignerAllows(block.timestamp - updatedAt, p.maxFeedAge);
+        }
+
         floorOut = (ref * (10_000 - p.maxDevBps)) / 10_000;
         if (got < floorOut) revert BelowOracleFloor(got, floorOut, updatedAt);
     }

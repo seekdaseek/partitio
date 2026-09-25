@@ -86,7 +86,7 @@ contract R06_RouterStranding is Test {
     }
 
     function _guard(uint256 bps) internal pure returns (OracleGuard.Params memory) {
-        return OracleGuard.Params({maxDevBps: bps});
+        return OracleGuard.Params({maxDevBps: bps, maxFeedAge: 120 hours});
     }
 
     function _oracleAapl(uint256 usdgIn) internal view returns (uint256) {

@@ -75,6 +75,9 @@ contract GaslessEntryTest is Test {
     function _order(uint256 amountIn, uint256 maxFeeUsdg, uint256 minOut, bytes32 salt)
         internal view returns (GaslessEntry.Order memory o)
     {
+        // The contract refuses minOut == 0 outright now (it was the root of the sliver
+        // extraction), so a test that means "effectively no floor" says one wei.
+        if (minOut == 0) minOut = 1;
         o = GaslessEntry.Order({
             owner: user,
             tokenIn: USDG,
@@ -84,7 +87,7 @@ contract GaslessEntryTest is Test {
             maxFeeUsdg: maxFeeUsdg,
             deadline: block.timestamp + 600,
             salt: salt,
-            guard: OracleGuard.Params({maxDevBps: 300})
+            guard: OracleGuard.Params({maxDevBps: 300, maxFeedAge: 120 hours})
         });
     }
 

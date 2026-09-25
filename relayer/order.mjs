@@ -1,165 +1,104 @@
 // THE one copy of partitio's order format. The relayer, the tests and the web app all import this
-// module; a second copy is how the signer and the contract quietly drift apart.
+// module; a second copy is how a signer and a contract quietly drift apart.
 //
-// Nothing here is allowed to be a paraphrase of the contract. Every constant below is checked
-// against the deployed bytecode by test/E2E_SharedModule.t.sol, which reads ORDER_TYPEHASH and
-// GUARD_TYPEHASH off the contract and recomputes `spendable` and `hashOrder` for random inputs.
-// If this file drifts, that test fails — that is the whole point of it existing.
+// THE CRYPTO IS NOT OURS. An earlier version of this file carried a hand-written Keccak-256,
+// because the relayer had no dependencies. It passed the standard vectors and matched `cast keccak`
+// byte for byte — and it still had no business sitting next to a funded key. viem is pinned in
+// package-lock.json and does keccak, EIP-712 hashing and signing. What survives from the
+// hand-rolled version is its test vectors, which now check viem instead: see relayer/parity.test.mjs.
 //
-// No dependencies, on purpose: the relayer runs on node builtins only, so Keccak-256 is
-// implemented here rather than pulled in. It is verified against the standard vectors in
-// selfTest() below, which the relayer runs at boot.
+// Nothing here is allowed to be a paraphrase of the contract. test/E2E_SharedModule.t.sol reads
+// hashOrder off the deployed contract and compares it with this module's for random orders, and
+// recomputes `spendable` the same way. If this file drifts, that test fails.
 
-// ---------------------------------------------------------------- keccak-256
-
-const MASK = (1n << 64n) - 1n;
-
-const RC = [
-  0x0000000000000001n, 0x0000000000008082n, 0x800000000000808an, 0x8000000080008000n,
-  0x000000000000808bn, 0x0000000080000001n, 0x8000000080008081n, 0x8000000000008009n,
-  0x000000000000008an, 0x0000000000000088n, 0x0000000080008009n, 0x000000008000000an,
-  0x000000008000808bn, 0x800000000000008bn, 0x8000000000008089n, 0x8000000000008003n,
-  0x8000000000008002n, 0x8000000000000080n, 0x000000000000800an, 0x800000008000000an,
-  0x8000000080008081n, 0x8000000000008080n, 0x0000000080000001n, 0x8000000080008008n,
-];
-
-// rho offsets, r[x][y]
-const ROT = [
-  [0, 36, 3, 41, 18],
-  [1, 44, 10, 45, 2],
-  [62, 6, 43, 15, 61],
-  [28, 55, 25, 21, 56],
-  [27, 20, 39, 8, 14],
-];
-
-const rotl = (v, n) => (n === 0 ? v : (((v << BigInt(n)) | (v >> BigInt(64 - n))) & MASK));
-
-function keccakF(A) {
-  for (let round = 0; round < 24; round++) {
-    const C = new Array(5);
-    for (let x = 0; x < 5; x++) C[x] = A[x][0] ^ A[x][1] ^ A[x][2] ^ A[x][3] ^ A[x][4];
-    const D = new Array(5);
-    for (let x = 0; x < 5; x++) D[x] = C[(x + 4) % 5] ^ rotl(C[(x + 1) % 5], 1);
-    for (let x = 0; x < 5; x++) for (let y = 0; y < 5; y++) A[x][y] ^= D[x];
-
-    const B = [[], [], [], [], []];
-    for (let x = 0; x < 5; x++) {
-      for (let y = 0; y < 5; y++) B[y][(2 * x + 3 * y) % 5] = rotl(A[x][y], ROT[x][y]);
-    }
-    for (let x = 0; x < 5; x++) {
-      for (let y = 0; y < 5; y++) A[x][y] = B[x][y] ^ (~B[(x + 1) % 5][y] & MASK & B[(x + 2) % 5][y]);
-    }
-    A[0][0] ^= RC[round];
-  }
-  return A;
-}
-
-/** Keccak-256 (Ethereum's, NOT NIST SHA3-256 — they differ in the padding byte). */
-export function keccak256(bytes) {
-  const RATE = 136;
-  const input = bytes instanceof Uint8Array ? bytes : new Uint8Array(bytes);
-  const padLen = RATE - (input.length % RATE);
-  const buf = new Uint8Array(input.length + padLen);
-  buf.set(input);
-  buf[input.length] |= 0x01;      // Keccak padding, not 0x06
-  buf[buf.length - 1] |= 0x80;
-
-  const A = [0, 0, 0, 0, 0].map(() => [0n, 0n, 0n, 0n, 0n]);
-  for (let off = 0; off < buf.length; off += RATE) {
-    for (let i = 0; i < RATE / 8; i++) {
-      let lane = 0n;
-      for (let b = 7; b >= 0; b--) lane = (lane << 8n) | BigInt(buf[off + i * 8 + b]);
-      A[i % 5][Math.floor(i / 5)] ^= lane;
-    }
-    keccakF(A);
-  }
-
-  const out = new Uint8Array(32);
-  for (let i = 0; i < 4; i++) {
-    let lane = A[i % 5][Math.floor(i / 5)];
-    for (let b = 0; b < 8; b++) {
-      out[i * 8 + b] = Number(lane & 0xffn);
-      lane >>= 8n;
-    }
-  }
-  return out;
-}
-
-export const keccakHex = (bytes) => "0x" + Buffer.from(keccak256(bytes)).toString("hex");
-export const utf8 = (s) => new TextEncoder().encode(s);
-export const keccakUtf8 = (s) => keccakHex(utf8(s));
-
-// ---------------------------------------------------------------- abi helpers
-
-const strip = (h) => String(h).replace(/^0x/, "").toLowerCase();
-export const word = (v) => {
-  if (typeof v === "boolean") v = v ? 1n : 0n;
-  if (typeof v === "string" && v.startsWith("0x")) return strip(v).padStart(64, "0");
-  return BigInt(v).toString(16).padStart(64, "0");
-};
-export const concatHex = (...parts) => "0x" + parts.map(strip).join("");
-const hexBytes = (h) => Uint8Array.from(Buffer.from(strip(h), "hex"));
+import { keccak256, toHex, hashTypedData } from "viem";
+import { privateKeyToAccount } from "viem/accounts";
 
 // ---------------------------------------------------------------- the format
 
-/** EIP712("partitio", "3") — must match GaslessEntry's constructor. */
+/** Must match GaslessEntry's `EIP712("partitio", "3")`. */
 export const EIP712_NAME = "partitio";
 export const EIP712_VERSION = "3";
 export const CHAIN_ID = 4663;
 
-export const GUARD_TYPE = "Guard(uint256 maxDevBps)";
+/** The EIP-712 types, in the shape viem wants. viem appends referenced struct types in
+ *  alphabetical order when it builds the encodeType string, which is what the contract's
+ *  hard-coded ORDER_TYPEHASH also does — parity.test.mjs checks that rather than assuming it. */
+export const ORDER_TYPES = {
+  Guard: [
+    { name: "maxDevBps", type: "uint256" },
+    { name: "maxFeedAge", type: "uint256" },
+  ],
+  Order: [
+    { name: "owner", type: "address" },
+    { name: "tokenIn", type: "address" },
+    { name: "amountIn", type: "uint256" },
+    { name: "tokenOut", type: "address" },
+    { name: "minOut", type: "uint256" },
+    { name: "maxFeeUsdg", type: "uint256" },
+    { name: "deadline", type: "uint256" },
+    { name: "salt", type: "bytes32" },
+    { name: "guard", type: "Guard" },
+  ],
+};
+
+/** The encodeType strings, written out so they can be compared with the contract's constants. */
+export const GUARD_TYPE = "Guard(uint256 maxDevBps,uint256 maxFeedAge)";
 export const ORDER_TYPE =
   "Order(address owner,address tokenIn,uint256 amountIn,address tokenOut,uint256 minOut," +
   "uint256 maxFeeUsdg,uint256 deadline,bytes32 salt,Guard guard)" + GUARD_TYPE;
 
-export const GUARD_TYPEHASH = keccakUtf8(GUARD_TYPE);
-export const ORDER_TYPEHASH = keccakUtf8(ORDER_TYPE);
+export const GUARD_TYPEHASH = keccak256(toHex(GUARD_TYPE));
+export const ORDER_TYPEHASH = keccak256(toHex(ORDER_TYPE));
 
-export function domainSeparator(verifyingContract, chainId = CHAIN_ID) {
-  const typeHash = keccakUtf8(
-    "EIP712Domain(string name,string version,uint256 chainId,address verifyingContract)"
-  );
-  return keccakHex(
-    hexBytes(
-      concatHex(
-        typeHash,
-        keccakUtf8(EIP712_NAME),
-        keccakUtf8(EIP712_VERSION),
-        word(chainId),
-        word(verifyingContract)
-      )
-    )
-  );
+export const domainFor = (verifyingContract, chainId = CHAIN_ID) => ({
+  name: EIP712_NAME,
+  version: EIP712_VERSION,
+  chainId,
+  verifyingContract,
+});
+
+/** Normalise an order to the BigInt/hex shapes viem expects. */
+export function normalizeOrder(o) {
+  return {
+    owner: o.owner,
+    tokenIn: o.tokenIn,
+    amountIn: BigInt(o.amountIn),
+    tokenOut: o.tokenOut,
+    minOut: BigInt(o.minOut),
+    maxFeeUsdg: BigInt(o.maxFeeUsdg),
+    deadline: BigInt(o.deadline),
+    salt: o.salt,
+    guard: { maxDevBps: BigInt(o.guard.maxDevBps), maxFeedAge: BigInt(o.guard.maxFeedAge) },
+  };
 }
 
-export function hashGuard(guard) {
-  return keccakHex(hexBytes(concatHex(GUARD_TYPEHASH, word(guard.maxDevBps))));
-}
-
+/** The EIP-712 digest the contract's `hashOrder` returns. */
 export function hashOrder(order, verifyingContract, chainId = CHAIN_ID) {
-  const structHash = keccakHex(
-    hexBytes(
-      concatHex(
-        ORDER_TYPEHASH,
-        word(order.owner),
-        word(order.tokenIn),
-        word(order.amountIn),
-        word(order.tokenOut),
-        word(order.minOut),
-        word(order.maxFeeUsdg),
-        word(order.deadline),
-        word(order.salt),
-        hashGuard(order.guard)
-      )
-    )
-  );
-  const ds = domainSeparator(verifyingContract, chainId);
-  const pre = Uint8Array.from([
-    0x19, 0x01,
-    ...hexBytes(ds),
-    ...hexBytes(structHash),
-  ]);
-  return keccakHex(pre);
+  return hashTypedData({
+    domain: domainFor(verifyingContract, chainId),
+    types: ORDER_TYPES,
+    primaryType: "Order",
+    message: normalizeOrder(order),
+  });
+}
+
+/** Sign an order. The key never leaves this call. */
+export async function signOrder(privateKey, order, verifyingContract, chainId = CHAIN_ID) {
+  const account = privateKeyToAccount(privateKey);
+  const signature = await account.signTypedData({
+    domain: domainFor(verifyingContract, chainId),
+    types: ORDER_TYPES,
+    primaryType: "Order",
+    message: normalizeOrder(order),
+  });
+  return {
+    signature,
+    v: Number("0x" + signature.slice(130, 132)),
+    r: "0x" + signature.slice(2, 66),
+    s: "0x" + signature.slice(66, 130),
+    signer: account.address,
+  };
 }
 
 // ---------------------------------------------------------------- spendable
@@ -173,8 +112,8 @@ export function hashOrder(order, verifyingContract, chainId = CHAIN_ID) {
  *
  * On a BUY the fee is taken off the input before the swap, so the legs must cover amountIn - fee.
  * On a SELL the fee comes out of the USDG OUTPUT afterwards, so the legs cover the whole input.
- * Getting this wrong in either direction is now a hard revert (LegsDoNotCoverOrder), which is
- * exactly why it lives in one place and is asserted against the contract on a fork.
+ * Getting this wrong in either direction is a hard revert (LegsDoNotCoverOrder), which is why it
+ * lives in one place and is asserted against the contract on a fork.
  */
 export function spendableFor({ tokenIn, amountIn, fee, usdg }) {
   const a = BigInt(amountIn);
@@ -196,8 +135,7 @@ export function spendableFor({ tokenIn, amountIn, fee, usdg }) {
  * (amountIn mod 8) — up to 7 wei short — and its best-single override used the gross amount.
  *
  * The remainder goes to the LARGEST leg, not the last one: the largest leg is the one whose
- * execution price moves least per wei, so that is where rounding does the least damage to the
- * quoted split.
+ * execution price moves least per wei, so that is where rounding does the least damage.
  */
 export function scaleLegsToSpendable(legs, spendable) {
   const target = BigInt(spendable);
@@ -211,9 +149,10 @@ export function scaleLegsToSpendable(legs, spendable) {
   // Fewer wei than legs: a leg of zero is not a leg. Keep the heaviest `target` of them at 1 wei
   // each, which is the only split that both sums correctly and has no empty leg.
   if (target < BigInt(legs.length)) {
-    const order = legs.map((l, i) => i).sort((a, b) => (weights[b] > weights[a] ? 1 : weights[b] < weights[a] ? -1 : a - b));
-    const keep = order.slice(0, Number(target));
-    return keep.map((i) => ({ ...legs[i], amountIn: "1" }));
+    const order = legs
+      .map((_, i) => i)
+      .sort((a, b) => (weights[b] > weights[a] ? 1 : weights[b] < weights[a] ? -1 : a - b));
+    return order.slice(0, Number(target)).map((i) => ({ ...legs[i], amountIn: "1" }));
   }
 
   if (totalWeight === 0n) {
@@ -223,14 +162,14 @@ export function scaleLegsToSpendable(legs, spendable) {
 
   const out = legs.map((l, i) => {
     let amt = (weights[i] * target) / totalWeight;
-    if (amt < 1n) amt = 1n;                    // never emit a zero leg
+    if (amt < 1n) amt = 1n; // never emit a zero leg
     return { ...l, amountIn: amt };
   });
 
-  // Fix up to hit `target` exactly. Over-allocation can only come from the >=1 clamp, so take it
-  // back from the largest legs; under-allocation is division remainder and goes to the largest.
   let sum = out.reduce((a, l) => a + l.amountIn, 0n);
-  const byDesc = out.map((l, i) => i).sort((a, b) => (out[b].amountIn > out[a].amountIn ? 1 : out[b].amountIn < out[a].amountIn ? -1 : a - b));
+  const byDesc = out
+    .map((_, i) => i)
+    .sort((a, b) => (out[b].amountIn > out[a].amountIn ? 1 : out[b].amountIn < out[a].amountIn ? -1 : a - b));
 
   if (sum < target) {
     out[byDesc[0]].amountIn += target - sum;
@@ -238,7 +177,7 @@ export function scaleLegsToSpendable(legs, spendable) {
     let excess = sum - target;
     for (const i of byDesc) {
       if (excess === 0n) break;
-      const spare = out[i].amountIn - 1n;      // keep at least 1 wei
+      const spare = out[i].amountIn - 1n; // keep at least 1 wei
       const take = spare < excess ? spare : excess;
       out[i].amountIn -= take;
       excess -= take;
@@ -249,26 +188,44 @@ export function scaleLegsToSpendable(legs, spendable) {
   return out.map((l) => ({ ...l, amountIn: l.amountIn.toString() }));
 }
 
-// ---------------------------------------------------------------- self test
+// ---------------------------------------------------------------- client defaults
 
-/** Standard Keccak-256 vectors. The relayer runs this at boot: a wrong hash here would mean every
- *  order it signs is rejected, and finding that out from a revert is expensive. */
-export function selfTest() {
-  const cases = [
-    ["", "0xc5d2460186f7233c927e7db2dcc703c0e500b653ca82273b7bfad8045d85a470"],
-    ["abc", "0x4e03657aea45a94fc7d47ba826c8d667c0d1e6e33a64a036ec44f58fa12d6c45"],
-    [
-      "abcdbcdecdefdefgefghfghighijhijkijkljklmklmnlmnomnopnopq",
-      "0x45d3b367a6904e6e8d502ee04999a7c27647f91fa845d456525fd352ae3d7371",
-    ],
-  ];
-  for (const [input, want] of cases) {
-    const got = keccakUtf8(input);
-    if (got !== want) throw new Error(`keccak256("${input}") = ${got}, want ${want}`);
+/** Slippage above this is refused outright rather than signed. */
+export const MAX_SLIPPAGE_BPS = 300;
+export const DEFAULT_SLIPPAGE_BPS = 50;
+export const DEFAULT_DEADLINE_SECONDS = 120;
+export const FEED_AGE_HEADROOM_SECONDS = 60;
+
+/**
+ * The client-side defaults for a MARKET order, in one place so the relayer and the web app cannot
+ * disagree about them.
+ *
+ * `maxFeedAge` is the feed's age at quote time plus the deadline plus headroom: the order must
+ * stay fillable for as long as it is live, but no longer, so a relayer cannot sit on it waiting
+ * for the reference to go stale.
+ */
+export function marketOrderDefaults({ quotedNet, feedAgeAtQuote, nowSeconds, slippageBps = DEFAULT_SLIPPAGE_BPS }) {
+  if (slippageBps > MAX_SLIPPAGE_BPS) {
+    throw new Error(`slippage ${slippageBps} bps exceeds the ${MAX_SLIPPAGE_BPS} bps maximum`);
   }
-  // A 136-byte input exercises the exact-rate padding edge, which is the classic place to get
-  // Keccak wrong: the padding must occupy a whole extra block.
-  const exact = keccakHex(new Uint8Array(136));
-  if (exact.length !== 66) throw new Error("keccak256 of a full rate block is malformed");
-  return true;
+  const net = BigInt(quotedNet);
+  const minOut = (net * BigInt(10_000 - slippageBps)) / 10_000n;
+  if (minOut <= 0n) throw new Error("marketOrderDefaults: quoted net is too small to floor");
+  return {
+    minOut,
+    deadline: BigInt(nowSeconds) + BigInt(DEFAULT_DEADLINE_SECONDS),
+    maxFeedAge:
+      BigInt(feedAgeAtQuote) + BigInt(DEFAULT_DEADLINE_SECONDS) + BigInt(FEED_AGE_HEADROOM_SECONDS),
+    slippageBps,
+  };
+}
+
+/** What the relayer refuses to accept from a client, regardless of what it signed. */
+export function rejectReasonForMarketOrder(order, slippageBps) {
+  if (BigInt(order.minOut) === 0n) return "minOut must be greater than zero";
+  if (slippageBps !== undefined && slippageBps > MAX_SLIPPAGE_BPS) {
+    return `slippage ${slippageBps} bps exceeds the ${MAX_SLIPPAGE_BPS} bps maximum`;
+  }
+  if (BigInt(order.guard.maxFeedAge) === 0n) return "maxFeedAge must be greater than zero";
+  return null;
 }

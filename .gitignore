@@ -12,7 +12,8 @@ broadcast/
 
 # node
 node_modules/
-package-lock.json
+# package-lock.json is COMMITTED on purpose: this code signs next to a funded
+# key, so the crypto dependency is pinned, not floating.
 
 # local recon artifacts
 docs/*.raw.json

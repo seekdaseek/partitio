@@ -88,7 +88,7 @@ contract SGOVMultiplier is Test {
         vm.startPrank(trader);
         IERC20(USDG).approve(address(router), amt);
         uint256 got = router.swapExactIn(
-            USDG, SGOV, _legs(0, amt), OracleGuard.Params({maxDevBps: OracleGuard.DEVIATION_FLOOR_BPS}),
+            USDG, SGOV, _legs(0, amt), OracleGuard.Params({maxDevBps: OracleGuard.DEVIATION_FLOOR_BPS, maxFeedAge: 120 hours}),
             0, trader, block.timestamp + 300
         );
         vm.stopPrank();
@@ -102,7 +102,7 @@ contract SGOVMultiplier is Test {
         vm.startPrank(trader);
         IERC20(SGOV).approve(address(router), amt);
         uint256 got = router.swapExactIn(
-            SGOV, USDG, _legs(0, amt), OracleGuard.Params({maxDevBps: 100}),
+            SGOV, USDG, _legs(0, amt), OracleGuard.Params({maxDevBps: 100, maxFeedAge: 120 hours}),
             0, trader, block.timestamp + 300
         );
         vm.stopPrank();
@@ -162,7 +162,7 @@ contract SGOVMultiplier is Test {
         vm.startPrank(trader);
         IERC20(USDG).approve(address(router), amt);
         uint256 got = router.swapExactIn(
-            USDG, SGOV, _legs(0, amt), OracleGuard.Params({maxDevBps: 200}), 0, trader, block.timestamp + 300
+            USDG, SGOV, _legs(0, amt), OracleGuard.Params({maxDevBps: 200, maxFeedAge: 120 hours}), 0, trader, block.timestamp + 300
         );
         vm.stopPrank();
         _logDeviation("BUY 10k USDG (live)", refRaw, got);

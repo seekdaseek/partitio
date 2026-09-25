@@ -132,7 +132,7 @@ contract PartitioProps {
         PartitioRouterV2.Leg[] memory legs = new PartitioRouterV2.Leg[](1);
         legs[0] = PartitioRouterV2.Leg(venue, new bytes32[](0), amt);
         try router.swapExactIn(
-            address(usdg), address(stock), legs, OracleGuard.Params({maxDevBps: 50 + (band % 1951)}),
+            address(usdg), address(stock), legs, OracleGuard.Params({maxDevBps: 50 + (band % 1951), maxFeedAge: 120 hours}),
             0, address(this), block.timestamp
         ) {} catch {}
     }
@@ -144,14 +144,18 @@ contract PartitioProps {
         uint256 amt = uint256(amountIn) % 1e9 + 1e6;
         usdg.mint(user, amt);
         uint256 maxFee = (amt * (feeBps % 60)) / 10_000;   // straddles the 50 bps contract cap
+        // the contract refuses a zero floor now, so the fuzzer must always state one
         uint256 minOut = (_oracleStockOut(amt) * (minOutBps % 10_001)) / 10_000;
+        if (minOut == 0) minOut = 1;
         uint256 dev = 50 + (band % 1951);
+        // straddle the signer's staleness bound: sometimes tight enough to bite
+        uint256 feedAge = 60 + (uint256(band) % (120 hours));
         uint256 feeNow = (maxFee * (feePick % 10_001)) / 10_000;
 
         GaslessEntry.Order memory o = GaslessEntry.Order({
             owner: user, tokenIn: address(usdg), amountIn: amt, tokenOut: address(stock),
             minOut: minOut, maxFeeUsdg: maxFee, deadline: block.timestamp + 300,
-            salt: bytes32(++saltCounter), guard: OracleGuard.Params({maxDevBps: dev})
+            salt: bytes32(++saltCounter), guard: OracleGuard.Params({maxDevBps: dev, maxFeedAge: feedAge})
         });
         _run(o, feeNow, aggMode, amt - feeNow, minOut, true);
     }
@@ -164,12 +168,14 @@ contract PartitioProps {
         uint256 gross = _oracleUsdgOut(amt);
         uint256 maxFee = (gross * (feeBps % 60)) / 10_000;
         uint256 minOut = (gross * (minOutBps % 10_001)) / 10_000;
+        if (minOut == 0) minOut = 1;
         uint256 dev = 50 + (band % 1951);
+        uint256 feedAge = 60 + (uint256(band) % (120 hours));
 
         GaslessEntry.Order memory o = GaslessEntry.Order({
             owner: user, tokenIn: address(stock), amountIn: amt, tokenOut: address(usdg),
             minOut: minOut, maxFeeUsdg: maxFee, deadline: block.timestamp + 300,
-            salt: bytes32(++saltCounter), guard: OracleGuard.Params({maxDevBps: dev})
+            salt: bytes32(++saltCounter), guard: OracleGuard.Params({maxDevBps: dev, maxFeedAge: feedAge})
         });
         _run(o, maxFee, aggMode, amt, minOut, false);
     }
@@ -217,8 +223,8 @@ contract PartitioProps {
         uint256 maxFee = (amt * (feeBps % 60)) / 10_000;
         GaslessEntry.Order memory o = GaslessEntry.Order({
             owner: user, tokenIn: address(usdg), amountIn: amt, tokenOut: address(stock),
-            minOut: 0, maxFeeUsdg: maxFee, deadline: block.timestamp + 300,
-            salt: bytes32(saltCounter), guard: OracleGuard.Params({maxDevBps: 300})
+            minOut: 1, maxFeeUsdg: maxFee, deadline: block.timestamp + 300,
+            salt: bytes32(saltCounter), guard: OracleGuard.Params({maxDevBps: 300, maxFeedAge: 120 hours})
         });
         bytes32 oh = entry.hashOrder(o);
         try entry.fill(o, _auth(o, oh, true), _route(o, 0, amt, 0), 0) {

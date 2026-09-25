@@ -32,7 +32,7 @@ contract OracleGuardAgeTest is Test {
     }
 
     function _p(uint256 bps) internal view returns (OracleGuard.Params memory) {
-        return OracleGuard.Params({maxDevBps: bps});
+        return OracleGuard.Params({maxDevBps: bps, maxFeedAge: 120 hours});
     }
 
     /// Helper so the library's internal functions are reachable from the test.

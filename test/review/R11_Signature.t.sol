@@ -43,11 +43,11 @@ contract R11_Signature is ReviewBase {
         // Built by hand from the EIP-712 spec: referenced struct types appended in ALPHABETICAL
         // order, each atomic field encoded to 32 bytes. One referenced type now, because Output is
         // gone (R-05) and Guard carries only the band (R-09).
-        bytes32 guardTypehash = keccak256("Guard(uint256 maxDevBps)");
+        bytes32 guardTypehash = keccak256("Guard(uint256 maxDevBps,uint256 maxFeedAge)");
         bytes32 orderTypehash = keccak256(
-            "Order(address owner,address tokenIn,uint256 amountIn,address tokenOut,uint256 minOut,uint256 maxFeeUsdg,uint256 deadline,bytes32 salt,Guard guard)Guard(uint256 maxDevBps)"
+            "Order(address owner,address tokenIn,uint256 amountIn,address tokenOut,uint256 minOut,uint256 maxFeeUsdg,uint256 deadline,bytes32 salt,Guard guard)Guard(uint256 maxDevBps,uint256 maxFeedAge)"
         );
-        bytes32 gh = keccak256(abi.encode(guardTypehash, o.guard.maxDevBps));
+        bytes32 gh = keccak256(abi.encode(guardTypehash, o.guard.maxDevBps, o.guard.maxFeedAge));
         bytes32 structHash = keccak256(
             abi.encode(
                 orderTypehash, o.owner, o.tokenIn, o.amountIn, o.tokenOut, o.minOut,
@@ -104,6 +104,8 @@ contract R11_Signature is ReviewBase {
         m.tokenOut = AMZN;              assertTrue(entry.hashOrder(m) != h, "tokenOut");
         m = _buyOrder(1000e6, 5e6, 1e18, bytes32(uint256(3)));
         m.guard.maxDevBps = 301;        assertTrue(entry.hashOrder(m) != h, "guard.maxDevBps");
+        m = _buyOrder(1000e6, 5e6, 1e18, bytes32(uint256(3)));
+        m.guard.maxFeedAge = 1 hours;   assertTrue(entry.hashOrder(m) != h, "guard.maxFeedAge");
         // `feed` and `stockIsInput` are deliberately NOT here any more: they are no longer signed
         // because they are no longer the signer's to choose (R-09). The router derives both.
     }
@@ -156,10 +158,10 @@ contract R11_Signature is ReviewBase {
 
     function _sellOrder(uint256 amountIn, bytes32 salt) internal view returns (GaslessEntry.Order memory o) {
         o = GaslessEntry.Order({
-            owner: user, tokenIn: AAPL, amountIn: amountIn, tokenOut: USDG, minOut: 0,
+            owner: user, tokenIn: AAPL, amountIn: amountIn, tokenOut: USDG, minOut: 1,
             maxFeeUsdg: 1e6,                       // the name now carries the denomination
             deadline: block.timestamp + 600, salt: salt,
-            guard: OracleGuard.Params({maxDevBps: 500})
+            guard: OracleGuard.Params({maxDevBps: 500, maxFeedAge: 120 hours})
         });
     }
 

@@ -67,7 +67,7 @@ contract RouterV2Test is Test {
     /// both off its immutable map and the tokens being traded (review findings R-09 and
     /// guard-direction-unbound). All a caller still picks is the band.
     function _guard(bool, uint256 bps) internal pure returns (OracleGuard.Params memory) {
-        return OracleGuard.Params({maxDevBps: bps});
+        return OracleGuard.Params({maxDevBps: bps, maxFeedAge: 120 hours});
     }
 
     function _legs(uint256[4] memory amts) internal view returns (PartitioRouterV2.Leg[] memory legs) {

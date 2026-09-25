@@ -185,7 +185,7 @@ contract R02_AggregatorGuardBypass is ReviewBase {
         IERC20(AAPL).approve(address(router), amt);
         vm.expectPartialRevert(OracleGuard.BelowOracleFloor.selector);
         router.swapExactIn(
-            AAPL, USDG, _legs1(0, amt), OracleGuard.Params({maxDevBps: 2000}), 0,
+            AAPL, USDG, _legs1(0, amt), OracleGuard.Params({maxDevBps: 2000, maxFeedAge: 120 hours}), 0,
             address(this), block.timestamp + 300
         );
     }

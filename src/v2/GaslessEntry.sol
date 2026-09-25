@@ -58,9 +58,9 @@ contract GaslessEntry is EIP712, ReentrancyGuardTransient {
         OracleGuard.Params guard;
     }
 
-    bytes32 private constant GUARD_TYPEHASH = keccak256("Guard(uint256 maxDevBps)");
+    bytes32 private constant GUARD_TYPEHASH = keccak256("Guard(uint256 maxDevBps,uint256 maxFeedAge)");
     bytes32 private constant ORDER_TYPEHASH = keccak256(
-        "Order(address owner,address tokenIn,uint256 amountIn,address tokenOut,uint256 minOut,uint256 maxFeeUsdg,uint256 deadline,bytes32 salt,Guard guard)Guard(uint256 maxDevBps)"
+        "Order(address owner,address tokenIn,uint256 amountIn,address tokenOut,uint256 minOut,uint256 maxFeeUsdg,uint256 deadline,bytes32 salt,Guard guard)Guard(uint256 maxDevBps,uint256 maxFeedAge)"
     );
 
     /// The absolute cap the user signs is a number; this is the shape. A relayer's real cost is
@@ -96,6 +96,7 @@ contract GaslessEntry is EIP712, ReentrancyGuardTransient {
     error FeeNotPayableInUSDG();
     error LegsDoNotCoverOrder(uint256 sum, uint256 expected);
     error NothingSpent();
+    error MinOutRequired();
 
     constructor(IUSDG usdg, PartitioRouterV2 router, address[4] memory aggregators)
         EIP712("partitio", "3")
@@ -115,7 +116,7 @@ contract GaslessEntry is EIP712, ReentrancyGuardTransient {
     // ------------------------------------------------------------------ hashing
 
     function _hashGuard(OracleGuard.Params calldata g) internal pure returns (bytes32) {
-        return keccak256(abi.encode(GUARD_TYPEHASH, g.maxDevBps));
+        return keccak256(abi.encode(GUARD_TYPEHASH, g.maxDevBps, g.maxFeedAge));
     }
 
     function hashOrder(Order calldata o) public view returns (bytes32) {
@@ -150,6 +151,10 @@ contract GaslessEntry is EIP712, ReentrancyGuardTransient {
     {
         if (block.timestamp > o.deadline) revert Expired();
         if (o.tokenIn == o.tokenOut) revert SameToken();
+        // A zero floor is the root of the sliver extraction the hunters found: every defence the
+        // signer has left was the oracle band, which an honest price on a tiny amount clears. The
+        // contract no longer accepts an order that declines to state what it expects to receive.
+        if (o.minOut == 0) revert MinOutRequired();
         if (fee > o.maxFeeUsdg) revert FeeAboveMax(fee, o.maxFeeUsdg);
 
         bytes32 oh = hashOrder(o);

@@ -301,7 +301,7 @@ contract R13_V4DoubleUnlock is ReviewBase {
         // The swap SUCCEEDS, which is the point: a reverting outer call would roll the flag back
         // and the assertion below would be vacuous.
         uint256 got = v4router.swapExactIn(
-            USDG, AAPL, legs, OracleGuard.Params({maxDevBps: 2000}), 0, address(this), block.timestamp + 300
+            USDG, AAPL, legs, OracleGuard.Params({maxDevBps: 2000, maxFeedAge: 120 hours}), 0, address(this), block.timestamp + 300
         );
 
         assertEq(got, give, "the first callback settled");
