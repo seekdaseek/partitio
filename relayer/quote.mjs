@@ -9,6 +9,7 @@ import fs from "node:fs";
 import path from "node:path";
 import { batch, call } from "./rpc.mjs";
 import { USDG, QUOTER_V2, V4_QUOTER } from "./config.mjs";
+import { scaleLegsToSpendable } from "./order.mjs";
 
 const HERE = path.dirname(new URL(import.meta.url).pathname);
 const REG = JSON.parse(fs.readFileSync(path.join(HERE, "registry.json"), "utf8"));
@@ -89,6 +90,10 @@ function greedy(ladders, amountIn) {
   return { total, legs, chunk };
 }
 
+/// @param amountIn MUST be the SPENDABLE amount — what GaslessEntry actually routes once the fee
+/// is taken off, i.e. `spendableFor()` from ./order.mjs. Quoting the gross and routing the net is
+/// how the legs used to come up short: the contract now rejects any route whose legs do not sum to
+/// exactly the spendable amount, so a quote against the gross is a guaranteed revert.
 /// @returns on-chain numbers: the best single venue, the greedy split, and the Chainlink reference.
 export async function onChainQuote(ticker, direction, amountIn) {
   const token = TOK.tokens[ticker];
@@ -136,6 +141,20 @@ export async function onChainQuote(ticker, direction, amountIn) {
                amountIn: amountIn.toString(), amountOut: bestSingle.toString() }] };
   }
 
+  // The legs must sum to EXACTLY `amountIn` (the spendable amount) or GaslessEntry reverts
+  // LegsDoNotCoverOrder. Greedy allocates in chunks of amountIn/K, so its legs sum to
+  // amountIn - (amountIn mod K) — up to K-1 wei short, which is a revert, not a rounding
+  // nicety. Verified: amountIn = 12_345_678 with K = 8 produced legs summing to 12_345_672.
+  if (split.legs.length > 0) {
+    split.legs = scaleLegsToSpendable(split.legs, amountIn);
+  } else if (bestSingle !== null) {
+    // every rung unmeasured but one venue answered at full size
+    const L = ladders.find((x) => x.id === bestId);
+    split = { total: bestSingle, chunk,
+      legs: [{ venue: bestId, family: bestFamily, kind: L?.kind ?? "v3",
+               amountIn: amountIn.toString(), amountOut: bestSingle.toString() }] };
+  }
+
   // Chainlink reference and the expected deviation at this size — shown in the preview so the
   // user's band can cover real impact instead of the guard rejecting it.
   const feed = FEEDS[ticker];
@@ -155,8 +174,11 @@ export async function onChainQuote(ticker, direction, amountIn) {
     }
   }
 
+  const legSum = split.legs.reduce((a, l) => a + BigInt(l.amountIn), 0n);
+
   return {
-    ticker, direction, amountIn: amountIn.toString(),
+    ticker, direction, amountIn: amountIn.toString(), legSum: legSum.toString(),
+    legsCoverOrder: legSum === amountIn,
     bestSingle: bestSingle?.toString() ?? null, bestSingleVenue: bestId, bestSingleFamily: bestFamily,
     partitio: split.total.toString(), legs: split.legs, venuesUsed: split.legs.length,
     unmeasuredRungs: unmeasured, totalRungs: ladders.length * K,
