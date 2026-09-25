@@ -28,3 +28,7 @@ docs/DISCLOSURE*.md
 # fuzzing artifacts (independent review)
 corpus/
 crytic-export/
+
+# tool output
+slither_results.json
+crytic-export/

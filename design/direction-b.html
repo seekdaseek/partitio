@@ -1,0 +1,394 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>partitio — Direction B</title>
+<style>
+  :root{
+    --bg:#F4F4EF; --card:#FFFFFF; --line:#E6E5DD; --line2:#F0EFE8;
+    --ink:#101319; --mut:#6A7180; --dim:#9AA0AC;
+    --green:#00976A; --greenbg:#E6F5EF;
+    --indigo:#4F46E5; --teal:#0E9BA6; --amber:#D08700; --violet:#7C3AED;
+    --red:#D42B2B;
+    --mono:ui-monospace,SFMono-Regular,"SF Mono",Menlo,Consolas,monospace;
+  }
+  *{box-sizing:border-box;margin:0;padding:0}
+  body{
+    background:var(--bg); color:var(--ink);
+    font:14px/1.5 -apple-system,BlinkMacSystemFont,"Segoe UI",Inter,Roboto,sans-serif;
+    -webkit-font-smoothing:antialiased;
+  }
+  .num{font-family:var(--mono);font-variant-numeric:tabular-nums}
+  .shell{max-width:860px;margin:0 auto;padding:0 16px 48px}
+
+  /* ---------- header ---------- */
+  header{display:flex;align-items:center;gap:10px;flex-wrap:wrap;padding:16px 0 18px}
+  .brand{font-weight:700;font-size:17px;letter-spacing:-.025em}
+  .brand b{color:var(--green)}
+  .chip{
+    font-family:var(--mono);font-size:11px;color:var(--mut);
+    background:#EDECE4;border-radius:20px;padding:4px 10px;
+  }
+  header .sp{flex:1}
+  .stat{display:flex;align-items:center;gap:7px;font-size:12px;color:var(--mut)}
+  .dot{width:6px;height:6px;border-radius:50%;background:var(--green);flex:none}
+
+  /* ---------- hero ---------- */
+  .hero{
+    background:var(--card);border:1px solid var(--line);border-radius:18px;
+    box-shadow:0 1px 2px rgba(16,19,25,.04),0 12px 32px -20px rgba(16,19,25,.25);
+    overflow:hidden;
+  }
+
+  .pair{display:flex;align-items:center;gap:10px;padding:16px 20px;border-bottom:1px solid var(--line2);flex-wrap:wrap}
+  .fld{
+    flex:1;min-width:132px;display:flex;align-items:center;gap:9px;
+    background:#FAFAF6;border:1px solid var(--line);border-radius:11px;padding:9px 11px;
+  }
+  .fld .v{font-family:var(--mono);font-size:17px;font-weight:600;letter-spacing:-.02em;flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis}
+  .fld .t{display:flex;align-items:center;gap:6px;font-weight:600;font-size:13px;white-space:nowrap}
+  .ic{width:19px;height:19px;border-radius:50%;display:grid;place-items:center;font-size:9px;font-weight:800;color:#fff;flex:none}
+  .ic.u{background:var(--green)} .ic.a{background:var(--indigo)}
+  .arw{color:var(--dim);font-size:16px;flex:none}
+
+  .big{padding:26px 20px 20px;text-align:center}
+  .big .lbl{font-size:11px;letter-spacing:.11em;text-transform:uppercase;color:var(--mut);margin-bottom:10px}
+  .big .n{
+    font-family:var(--mono);font-size:62px;line-height:1;font-weight:700;letter-spacing:-.045em;
+    word-break:break-all;
+  }
+  .big .n em{font-style:normal;font-size:26px;font-weight:600;color:var(--mut);margin-left:8px;letter-spacing:-.02em}
+  .big .u{font-family:var(--mono);font-size:13px;color:var(--mut);margin-top:9px}
+  @media(max-width:480px){ .big .n{font-size:40px} .big .n em{font-size:19px} }
+
+  .pills{display:flex;justify-content:center;flex-wrap:wrap;gap:8px;padding:0 20px 20px}
+  .pill{
+    display:flex;align-items:center;gap:7px;font-size:12px;font-weight:600;
+    border-radius:20px;padding:6px 12px;white-space:nowrap;
+  }
+  .pill .k{font-family:var(--mono);font-weight:700}
+  .p-g{background:var(--greenbg);color:var(--green)}
+  .p-i{background:#EEEDFD;color:var(--indigo)}
+  .p-n{background:#F1F0EA;color:var(--mut)}
+
+  /* ---------- comparison bars ---------- */
+  .sect{border-top:1px solid var(--line2);padding:18px 20px}
+  .sect h3{
+    font-size:11px;font-weight:600;letter-spacing:.1em;text-transform:uppercase;color:var(--mut);
+    display:flex;align-items:baseline;gap:8px;margin-bottom:14px;
+  }
+  .sect h3 em{font-style:normal;font-family:var(--mono);font-size:10.5px;letter-spacing:0;text-transform:none;color:var(--dim);margin-left:auto}
+
+  .cmp{display:flex;flex-direction:column;gap:11px}
+  .row{display:grid;grid-template-columns:104px minmax(0,1fr) 74px 92px;align-items:center;gap:12px}
+  .row .nm{font-size:12.5px;font-weight:600;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+  .row .nm i{display:block;font-style:normal;font-weight:400;font-size:10.5px;color:var(--dim)}
+  .track{position:relative;height:26px;background:#F3F2EC;border-radius:6px;overflow:hidden}
+  .fill{position:absolute;left:0;top:0;bottom:0;border-radius:6px}
+  .f-win{background:var(--green)}
+  .f-alt{background:#C9C8BE}
+  .row .vv{font-family:var(--mono);font-size:12.5px;font-weight:600;text-align:right;white-space:nowrap}
+  .row.w .vv{color:var(--green);font-weight:700}
+  .row .dt{font-family:var(--mono);font-size:12px;text-align:right;white-space:nowrap}
+  .row .dt b{display:block;font-weight:700;color:var(--red)}
+  .row .dt i{font-style:normal;font-size:10.5px;color:var(--dim)}
+  .row.w .dt b{color:var(--green)}
+  @media(max-width:480px){
+    .row{grid-template-columns:1fr auto;gap:5px 10px}
+    .row .nm{grid-column:1;grid-row:1}
+    .row .vv{grid-column:2;grid-row:1;font-size:13.5px}
+    .track{grid-column:1/-1;grid-row:2;height:22px}
+    .row .dt{grid-column:1/-1;grid-row:3;display:flex;justify-content:flex-end;align-items:baseline;gap:9px}
+    .row .dt b{display:inline}
+  }
+
+  /* ---------- route ribbon ---------- */
+  .ribbon{display:flex;height:30px;border-radius:8px;overflow:hidden;gap:2px;margin-bottom:12px}
+  .ribbon i{display:grid;place-items:center;font-family:var(--mono);font-size:11px;font-weight:700;color:#fff;font-style:normal}
+  .v1{background:var(--violet)} .v2{background:#1D4ED8} .v3{background:var(--teal)} .v4{background:var(--amber)}
+  .keys{display:flex;flex-wrap:wrap;gap:8px 16px}
+  .key{display:flex;align-items:center;gap:7px;font-size:11.5px;color:var(--mut)}
+  .sw{width:9px;height:9px;border-radius:2px;flex:none}
+  .key b{color:var(--ink);font-weight:600}
+
+  /* ---------- expandables ---------- */
+  details{border-top:1px solid var(--line2)}
+  summary{
+    list-style:none;cursor:pointer;padding:14px 20px;display:flex;align-items:center;gap:10px;
+    font-size:12.5px;font-weight:600;
+  }
+  summary::-webkit-details-marker{display:none}
+  summary .cv{margin-left:auto;font-family:var(--mono);font-size:11.5px;font-weight:400;color:var(--mut);white-space:nowrap}
+  summary .ch{color:var(--dim);font-size:11px;transition:transform .15s;flex:none}
+  details[open] summary .ch{transform:rotate(90deg)}
+  .body{padding:0 20px 18px}
+
+  table{width:100%;border-collapse:collapse}
+  th{font-size:10px;letter-spacing:.07em;text-transform:uppercase;color:var(--dim);text-align:right;padding:7px 0;font-weight:600}
+  th:first-child{text-align:left}
+  td{padding:8px 0;border-top:1px solid var(--line2);text-align:right;font-family:var(--mono);font-size:12px;white-space:nowrap}
+  td:first-child{text-align:left;font-family:inherit}
+  .vn{display:flex;align-items:center;gap:8px;font-size:12px}
+  .vn em{font-style:normal;color:var(--dim);font-size:10.5px;font-family:var(--mono)}
+  .ok{color:var(--green)}
+  .kv{display:flex;justify-content:space-between;gap:12px;padding:6px 0;font-size:12.5px;color:var(--mut);border-top:1px solid var(--line2)}
+  .kv:first-child{border-top:0}
+  .kv span:last-child{font-family:var(--mono);color:var(--ink)}
+
+  @media(max-width:480px){
+    /* stacked amount fields — side by side truncates the numbers at 375px */
+    .pair{flex-direction:column;align-items:stretch;gap:8px}
+    .arw{align-self:center;transform:rotate(90deg)}
+    .fld{min-width:0}
+
+    /* expandable summaries: caption drops to its own line instead of clipping */
+    summary{flex-wrap:wrap}
+    summary .cv{width:100%;margin-left:0;padding-left:21px;white-space:normal}
+
+    /* label/value rows instead of floats */
+    thead{display:none}
+    tbody tr{display:block;padding:9px 0;border-top:1px solid var(--line2)}
+    td{
+      display:flex;align-items:baseline;justify-content:space-between;gap:14px;
+      border:0;padding:2px 0;white-space:nowrap;
+    }
+    td::before{
+      content:attr(data-l);font-family:-apple-system,sans-serif;font-size:10px;
+      text-transform:uppercase;letter-spacing:.06em;color:var(--dim);flex:none;
+    }
+    td:first-child{display:block;margin-bottom:4px;white-space:normal}
+    td:first-child::before{content:none}
+  }
+
+  /* ---------- cta ---------- */
+  .foot{padding:18px 20px 20px;border-top:1px solid var(--line2);background:#FCFCF8}
+  .go{
+    width:100%;padding:15px;border:0;border-radius:12px;background:var(--ink);color:#fff;
+    font:600 15px/1 inherit;font-family:inherit;cursor:pointer;
+  }
+  .fnote{text-align:center;font-size:11.5px;color:var(--mut);margin-top:11px;font-family:var(--mono)}
+
+  /* ---------- fills ---------- */
+  .fills{margin-top:22px}
+  .fills h2{font-size:12px;letter-spacing:.1em;text-transform:uppercase;color:var(--mut);display:flex;align-items:center;gap:8px;margin-bottom:10px}
+  .fills h2 .lv{margin-left:auto;font-family:var(--mono);font-size:10.5px;letter-spacing:0;text-transform:none;color:var(--green);display:flex;align-items:center;gap:6px}
+  .fl{
+    background:var(--card);border:1px solid var(--line);border-radius:12px;padding:12px 15px;margin-bottom:8px;
+    display:grid;grid-template-columns:62px minmax(0,1fr) auto;align-items:center;gap:14px;
+  }
+  .fl .tm{font-family:var(--mono);font-size:11.5px;color:var(--dim)}
+  .fl .od{font-family:var(--mono);font-size:13px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+  .fl .od i{font-style:normal;color:var(--dim)}
+  .fl .od b{font-weight:600}
+  .fl .mt{font-size:10.5px;color:var(--dim);margin-top:2px;font-family:var(--mono)}
+  .fl .rt{text-align:right;white-space:nowrap}
+  .fl .rt a{font-family:var(--mono);font-size:11.5px;color:var(--indigo);text-decoration:none;border-bottom:1px dotted rgba(79,70,229,.35)}
+  .fl .rt a:hover{border-bottom-style:solid}
+  .fl .rt .bp{font-family:var(--mono);font-size:11.5px;color:var(--green);display:block;margin-bottom:3px}
+  @media(max-width:480px){
+    .fl{grid-template-columns:1fr auto;gap:6px 10px}
+    .fl .tm{grid-column:1/-1}
+  }
+</style>
+</head>
+<body>
+<div class="shell">
+
+  <header>
+    <div class="brand">partit<b>i</b>o</div>
+    <div class="chip">Robinhood Chain · 4663</div>
+    <div class="sp"></div>
+    <div class="stat"><i class="dot"></i> No wallet connected · quote is live</div>
+  </header>
+
+  <div class="hero">
+
+    <!-- inputs, deliberately compact -->
+    <div class="pair">
+      <div class="fld">
+        <i class="ic u">U</i>
+        <div class="v">10,000.00</div>
+        <div class="t">USDG</div>
+      </div>
+      <div class="arw">→</div>
+      <div class="fld">
+        <i class="ic a">A</i>
+        <div class="v" style="color:var(--dim)">29.5366</div>
+        <div class="t">AAPL</div>
+      </div>
+    </div>
+
+    <!-- THE NUMBER -->
+    <div class="big">
+      <div class="lbl">You receive</div>
+      <div class="n">29.5366<em>AAPL</em></div>
+      <div class="u">$9,998.16 &nbsp;·&nbsp; 338.50 per share</div>
+    </div>
+
+    <div class="pills">
+      <div class="pill p-g"><span class="k">$0.00</span> gas</div>
+      <div class="pill p-g"><span class="k">+2.4 bps</span> vs Chainlink · pass</div>
+      <div class="pill p-i"><span class="k">4</span> venues</div>
+      <div class="pill p-n"><span class="k">1</span> signature</div>
+    </div>
+
+    <!-- COMPARISON AS BARS -->
+    <div class="sect">
+      <h3>Same order, every other route <em>bars scaled from 29.4700</em></h3>
+      <div class="cmp">
+        <div class="row w">
+          <div class="nm">partitio <i>4-venue split</i></div>
+          <div class="track"><div class="fill f-win" style="width:95.1%"></div></div>
+          <div class="vv">29.5366</div>
+          <div class="dt"><b>best</b></div>
+        </div>
+        <div class="row">
+          <div class="nm">KyberSwap <i>aggregator</i></div>
+          <div class="track"><div class="fill f-alt" style="width:58.0%"></div></div>
+          <div class="vv">29.5106</div>
+          <div class="dt"><b>−8.8 bps</b><i>−$8.80</i></div>
+        </div>
+        <div class="row">
+          <div class="nm">Uniswap v4 <i>best single venue</i></div>
+          <div class="track"><div class="fill f-alt" style="width:30.4%"></div></div>
+          <div class="vv">29.4913</div>
+          <div class="dt"><b>−15.4 bps</b><i>−$15.33</i></div>
+        </div>
+        <div class="row">
+          <div class="nm">LI.FI <i>aggregator</i></div>
+          <div class="track"><div class="fill f-alt" style="width:12.6%"></div></div>
+          <div class="vv">29.4788</div>
+          <div class="dt"><b>−19.6 bps</b><i>−$19.56</i></div>
+        </div>
+      </div>
+    </div>
+
+    <!-- ROUTE RIBBON -->
+    <div class="sect">
+      <h3>Route <em>9,998.16 USDG across 4 venues</em></h3>
+      <div class="ribbon">
+        <i class="v1" style="width:42%">42%</i>
+        <i class="v2" style="width:31%">31%</i>
+        <i class="v3" style="width:18%">18%</i>
+        <i class="v4" style="width:9%">9%</i>
+      </div>
+      <div class="keys">
+        <div class="key"><i class="sw v1"></i> <b>Rialto MM-02</b> 12.4094</div>
+        <div class="key"><i class="sw v2"></i> <b>Uni v4 0.30%</b> 9.1572</div>
+        <div class="key"><i class="sw v3"></i> <b>Uni v3 0.05%</b> 5.3141</div>
+        <div class="key"><i class="sw v4"></i> <b>Uni v3 0.30%</b> 2.6559</div>
+      </div>
+    </div>
+
+    <!-- EXPANDABLE EVIDENCE -->
+    <details>
+      <summary><span class="ch">▶</span> Route detail <span class="cv">4 legs · per-leg oracle check</span></summary>
+      <div class="body">
+        <table>
+          <thead><tr><th>Venue</th><th>USDG in</th><th>AAPL out</th><th>Fill</th><th>Oracle Δ</th></tr></thead>
+          <tbody>
+            <tr>
+              <td><div class="vn"><i class="sw v1"></i> Rialto propAMM <em>MM-02</em></div></td>
+              <td data-l="USDG in">4,199.23</td><td data-l="AAPL out">12.4094</td><td data-l="Fill">338.39</td><td data-l="Oracle Δ" class="ok">−0.9 bps</td>
+            </tr>
+            <tr>
+              <td><div class="vn"><i class="sw v2"></i> Uniswap v4 <em>USDG/3000</em></div></td>
+              <td data-l="USDG in">3,099.43</td><td data-l="AAPL out">9.1572</td><td data-l="Fill">338.47</td><td data-l="Oracle Δ" class="ok">+1.5 bps</td>
+            </tr>
+            <tr>
+              <td><div class="vn"><i class="sw v3"></i> Uniswap v3 <em>USDG/500</em></div></td>
+              <td data-l="USDG in">1,799.67</td><td data-l="AAPL out">5.3141</td><td data-l="Fill">338.66</td><td data-l="Oracle Δ" class="ok">+7.1 bps</td>
+            </tr>
+            <tr>
+              <td><div class="vn"><i class="sw v4"></i> Uniswap v3 <em>USDG/3000</em></div></td>
+              <td data-l="USDG in">899.83</td><td data-l="AAPL out">2.6559</td><td data-l="Fill">338.81</td><td data-l="Oracle Δ" class="ok">+11.5 bps</td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+    </details>
+
+    <details>
+      <summary><span class="ch">▶</span> Oracle check <span class="cv">+2.4 bps · band ±85 bps · 0 of 4 outside</span></summary>
+      <div class="body">
+        <div class="kv"><span>Reference — Chainlink AAPL/USD</span><span>$338.42</span></div>
+        <div class="kv"><span>Last feed update</span><span>11:18 UTC · 1h 23m ago</span></div>
+        <div class="kv"><span>Size-weighted fill</span><span>338.50</span></div>
+        <div class="kv"><span>Deviation</span><span class="ok">+2.4 bps</span></div>
+        <div class="kv"><span>Band</span><span>±85 bps</span></div>
+        <div class="kv"><span>Band floor</span><span>50 dev + 30 fee + 5 slip</span></div>
+        <div class="kv"><span>Dead-feed ceiling</span><span>120h</span></div>
+      </div>
+    </details>
+
+    <details>
+      <summary><span class="ch">▶</span> Cost <span class="cv">$0.00 gas · 1.84 USDG relayer fee</span></summary>
+      <div class="body">
+        <div class="kv"><span>Order size</span><span>10,000.00 USDG</span></div>
+        <div class="kv"><span>Network gas</span><span class="ok">$0.00</span></div>
+        <div class="kv"><span>Relayer fee (repaid in USDG)</span><span>1.84 USDG</span></div>
+        <div class="kv"><span>Routed to market</span><span>9,998.16 USDG</span></div>
+        <div class="kv"><span>Net received</span><span>29.5366 AAPL</span></div>
+      </div>
+    </details>
+
+    <div class="foot">
+      <button class="go">Sign order — 1 signature</button>
+      <div class="fnote">no ETH · no approval · quote refreshes every 4s</div>
+    </div>
+  </div>
+
+  <!-- FILLS -->
+  <div class="fills">
+    <h2>Recent fills <span class="lv"><i class="dot"></i> live</span></h2>
+
+    <div class="fl">
+      <div class="tm">12:41:07</div>
+      <div>
+        <div class="od">10,000.00 USDG <i>→</i> <b>29.5366 AAPL</b></div>
+        <div class="mt">4 venues · Rialto MM-02 +3</div>
+      </div>
+      <div class="rt"><span class="bp">+2.4 bps</span><a href="#tx-0x7f3a">0x7f3a…c21b</a></div>
+    </div>
+
+    <div class="fl">
+      <div class="tm">12:40:31</div>
+      <div>
+        <div class="od">2,500.00 USDG <i>→</i> <b>24.7182 SGOV</b></div>
+        <div class="mt">2 venues · Uni v3 0.05% +1</div>
+      </div>
+      <div class="rt"><span class="bp">−0.6 bps</span><a href="#tx-0x1c08">0x1c08…9ef4</a></div>
+    </div>
+
+    <div class="fl">
+      <div class="tm">12:39:52</div>
+      <div>
+        <div class="od">6.0000 TSLA <i>→</i> <b>2,528.94 USDG</b></div>
+        <div class="mt">3 venues · Uni v4 0.30% +2</div>
+      </div>
+      <div class="rt"><span class="bp">+1.9 bps</span><a href="#tx-0x9b22">0x9b22…40de</a></div>
+    </div>
+
+    <div class="fl">
+      <div class="tm">12:38:14</div>
+      <div>
+        <div class="od">1,000.00 USDG <i>→</i> <b>5.1975 NVDA</b></div>
+        <div class="mt">3 venues · Rialto MM-07 +2</div>
+      </div>
+      <div class="rt"><span class="bp">+3.1 bps</span><a href="#tx-0xa4d7">0xa4d7…7b60</a></div>
+    </div>
+
+    <div class="fl">
+      <div class="tm">12:36:45</div>
+      <div>
+        <div class="od">15,000.00 USDG <i>→</i> <b>148.3092 SGOV</b></div>
+        <div class="mt">4 venues · Rialto MM-04 +3</div>
+      </div>
+      <div class="rt"><span class="bp">+0.8 bps</span><a href="#tx-0x3e91">0x3e91…12aa</a></div>
+    </div>
+  </div>
+
+</div>
+</body>
+</html>

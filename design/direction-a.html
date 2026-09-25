@@ -1,0 +1,427 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>partitio — Direction A</title>
+<style>
+  :root{
+    --bg:#080B14; --panel:#0F1524; --panel2:#131B2E; --line:#1F2A44;
+    --ink:#E9EEF9; --mut:#7C8AA5; --dim:#55637D;
+    --amber:#FFB020; --teal:#2DD4A7; --coral:#FF6B6B; --violet:#8B7CF6; --blue:#4C9AFF;
+    --mono:ui-monospace,SFMono-Regular,"SF Mono",Menlo,Consolas,monospace;
+  }
+  *{box-sizing:border-box;margin:0;padding:0}
+  body{
+    background:var(--bg); color:var(--ink);
+    font:14px/1.45 -apple-system,BlinkMacSystemFont,"Segoe UI",Inter,Roboto,sans-serif;
+    -webkit-font-smoothing:antialiased;
+  }
+  .num{font-family:var(--mono);font-variant-numeric:tabular-nums;letter-spacing:-.02em}
+  .pos{color:var(--teal)} .neg{color:var(--coral)}
+
+  /* ---------- top bar ---------- */
+  .top{
+    display:flex;align-items:center;gap:12px;flex-wrap:wrap;
+    padding:10px 20px;border-bottom:1px solid var(--line);background:var(--panel);
+  }
+  .brand{font-weight:700;letter-spacing:-.02em;font-size:15px}
+  .brand b{color:var(--amber)}
+  .chain{
+    font-family:var(--mono);font-size:11px;color:var(--mut);
+    border:1px solid var(--line);border-radius:5px;padding:3px 8px;
+  }
+  .top .sp{flex:1}
+  .nowallet{
+    display:flex;align-items:center;gap:7px;font-size:12px;color:var(--mut);
+    border:1px solid var(--line);border-radius:5px;padding:4px 10px;background:var(--panel2);
+  }
+  .dot{width:6px;height:6px;border-radius:50%;background:var(--teal);box-shadow:0 0 0 3px rgba(45,212,167,.15)}
+
+  /* ---------- page grid ---------- */
+  .wrap{display:grid;grid-template-columns:330px minmax(0,1fr);gap:18px;padding:18px 20px 40px;max-width:1440px}
+  @media(max-width:900px){ .wrap{grid-template-columns:1fr;padding:14px 14px 32px;gap:14px} }
+
+  .card{background:var(--panel);border:1px solid var(--line);border-radius:10px}
+  .card h2{
+    font-size:11px;font-weight:600;letter-spacing:.1em;text-transform:uppercase;color:var(--mut);
+    padding:11px 14px;border-bottom:1px solid var(--line);display:flex;align-items:center;gap:8px;
+  }
+  .card h2 .tag{margin-left:auto;font-family:var(--mono);letter-spacing:0;text-transform:none;font-weight:400;color:var(--dim)}
+
+  /* ---------- ticket rail ---------- */
+  .rail{display:flex;flex-direction:column;gap:14px}
+  .leg{padding:12px 14px;border-bottom:1px solid var(--line)}
+  .leg .lbl{font-size:11px;color:var(--mut);text-transform:uppercase;letter-spacing:.08em;margin-bottom:6px}
+  .legrow{display:flex;align-items:center;gap:10px}
+  .amt{font-family:var(--mono);font-size:24px;font-weight:600;letter-spacing:-.03em;flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis}
+  .tok{
+    display:flex;align-items:center;gap:7px;background:var(--panel2);border:1px solid var(--line);
+    border-radius:7px;padding:5px 9px;font-weight:600;font-size:13px;white-space:nowrap;
+  }
+  .ic{width:18px;height:18px;border-radius:50%;display:grid;place-items:center;font-size:9px;font-weight:800;color:#06131F}
+  .ic.u{background:linear-gradient(135deg,#7CE7C4,#1FB489)}
+  .ic.a{background:linear-gradient(135deg,#FFD27A,#FF9B20)}
+  .sub{font-family:var(--mono);font-size:11px;color:var(--dim);margin-top:5px}
+
+  .ledger{padding:12px 14px}
+  .lrow{display:flex;justify-content:space-between;gap:10px;padding:5px 0;font-size:12.5px;color:var(--mut)}
+  .lrow span:last-child{font-family:var(--mono);color:var(--ink)}
+  .lrow.zero span:last-child{color:var(--teal)}
+  .lrow.tot{
+    margin-top:8px;padding-top:10px;border-top:1px solid var(--line);
+    font-size:13px;color:var(--ink);font-weight:600;align-items:baseline;
+  }
+  .lrow.tot span:last-child{font-size:17px;font-weight:700}
+  .cta{
+    margin:4px 14px 14px;display:block;width:calc(100% - 28px);padding:12px;border:0;border-radius:8px;
+    background:var(--amber);color:#1A1204;font-weight:700;font-size:14px;cursor:pointer;font-family:inherit;
+  }
+  .ctanote{font-size:11px;color:var(--dim);text-align:center;padding:0 14px 13px;font-family:var(--mono)}
+
+  /* ---------- hero comparison ---------- */
+  .hero{border-color:#2B3A5E;box-shadow:0 0 0 1px rgba(255,176,32,.07),0 10px 40px -18px rgba(0,0,0,.9)}
+  .cmp{width:100%;border-collapse:collapse}
+  .cmp th{
+    font-size:10px;font-weight:600;letter-spacing:.09em;text-transform:uppercase;color:var(--dim);
+    text-align:right;padding:9px 14px;border-bottom:1px solid var(--line);white-space:nowrap;
+  }
+  .cmp th:first-child{text-align:left}
+  .cmp td{padding:11px 14px;border-bottom:1px solid #18223A;text-align:right;white-space:nowrap}
+  .cmp td:first-child{text-align:left;white-space:normal}
+  .cmp tr:last-child td{border-bottom:0}
+  .rname{font-weight:600;font-size:13.5px}
+  .rmeta{font-size:11px;color:var(--dim);margin-top:2px}
+  .net{font-family:var(--mono);font-size:15px;font-weight:600}
+  .win td{background:linear-gradient(90deg,rgba(255,176,32,.10),rgba(255,176,32,.02));position:relative}
+  .win td:first-child{box-shadow:inset 3px 0 0 var(--amber)}
+  .win .net{font-size:21px;color:var(--amber)}
+  .win .rname{color:var(--amber)}
+  .best{
+    font-family:var(--mono);font-size:10px;color:var(--amber);border:1px solid rgba(255,176,32,.35);
+    border-radius:4px;padding:2px 6px;margin-left:7px;vertical-align:1px;
+  }
+  .dlt{font-family:var(--mono);font-size:13px}
+  .dsub{font-family:var(--mono);font-size:11px;color:var(--dim);margin-top:2px}
+
+  /* ---------- split ---------- */
+  .two{display:grid;grid-template-columns:minmax(0,1.35fr) minmax(0,1fr);gap:18px;margin-top:18px}
+  @media(max-width:900px){ .two{grid-template-columns:1fr;gap:14px;margin-top:14px} }
+
+  .bar{display:flex;height:26px;margin:14px 14px 0;border-radius:5px;overflow:hidden;gap:2px}
+  .bar i{display:grid;place-items:center;font-family:var(--mono);font-size:10px;font-weight:700;color:#07101C;font-style:normal}
+  .s1{background:var(--violet)} .s2{background:var(--blue)} .s3{background:var(--teal)} .s4{background:var(--amber)}
+  .lgd{display:flex;flex-wrap:wrap;gap:6px 14px;padding:10px 14px 0;font-size:11px;color:var(--mut)}
+  .lgd span{display:flex;align-items:center;gap:6px}
+  .sw{width:9px;height:9px;border-radius:2px;flex:none}
+
+  .legs{width:100%;border-collapse:collapse;margin-top:8px}
+  .legs th{font-size:10px;letter-spacing:.08em;text-transform:uppercase;color:var(--dim);text-align:right;padding:8px 14px;font-weight:600}
+  .legs th:first-child{text-align:left}
+  .legs td{padding:8px 14px;border-top:1px solid #18223A;text-align:right;font-family:var(--mono);font-size:12px;white-space:nowrap}
+  .legs td:first-child{text-align:left;font-family:inherit}
+  .vn{display:flex;align-items:center;gap:8px;font-size:12.5px}
+  .vn em{font-style:normal;color:var(--dim);font-size:11px;font-family:var(--mono)}
+
+  /* ---------- oracle ---------- */
+  .orc{padding:14px}
+  .obig{display:flex;align-items:baseline;gap:10px;flex-wrap:wrap}
+  .obig b{font-family:var(--mono);font-size:34px;font-weight:700;letter-spacing:-.03em;color:var(--teal)}
+  .pass{
+    font-family:var(--mono);font-size:11px;font-weight:700;color:#04140E;background:var(--teal);
+    border-radius:4px;padding:3px 8px;
+  }
+  .oline{font-size:11.5px;color:var(--mut);margin-top:3px}
+  .gauge{margin:18px 0 6px;position:relative;height:34px}
+  .track{position:absolute;top:13px;left:0;right:0;height:7px;border-radius:4px;background:linear-gradient(90deg,rgba(255,107,107,.35),rgba(45,212,167,.35) 22%,rgba(45,212,167,.35) 78%,rgba(255,107,107,.35))}
+  .gzero{position:absolute;top:8px;left:50%;width:1px;height:17px;background:var(--dim)}
+  .mark{position:absolute;top:6px;left:51.4%;width:3px;height:21px;border-radius:2px;background:var(--teal);box-shadow:0 0 0 4px rgba(45,212,167,.18)}
+  .gl{position:absolute;top:26px;font-family:var(--mono);font-size:10px;color:var(--dim)}
+  .ometa{border-top:1px solid var(--line);margin-top:12px;padding-top:11px}
+  .orow{display:flex;justify-content:space-between;gap:10px;padding:4px 0;font-size:12px;color:var(--mut)}
+  .orow span:last-child{font-family:var(--mono);color:var(--ink)}
+
+  /* ---------- fills ---------- */
+  .fills{width:100%;border-collapse:collapse;margin-top:18px}
+  .fills th{font-size:10px;letter-spacing:.08em;text-transform:uppercase;color:var(--dim);text-align:right;padding:9px 14px;font-weight:600;border-bottom:1px solid var(--line)}
+  .fills th:first-child{text-align:left}
+  .fills td{padding:10px 14px;border-bottom:1px solid #18223A;text-align:right;font-family:var(--mono);font-size:12px;white-space:nowrap}
+  .fills td:first-child{text-align:left}
+  .fills tr:last-child td{border-bottom:0}
+  .pair{color:var(--ink)}
+  .pair i{font-style:normal;color:var(--dim)}
+  .tx{color:var(--blue);text-decoration:none;border-bottom:1px dotted rgba(76,154,255,.4)}
+  .tx:hover{border-bottom-style:solid}
+  .live{margin-left:auto;display:flex;align-items:center;gap:6px;font-family:var(--mono);font-size:10px;color:var(--teal);letter-spacing:0;text-transform:none;font-weight:400}
+
+  /* ---------- phone reflow for tables ---------- */
+  @media(max-width:620px){
+    .cmp thead,.legs thead,.fills thead{display:none}
+    .cmp tr,.legs tr,.fills tr{display:block;padding:11px 14px;border-bottom:1px solid #18223A}
+    .cmp td,.legs td,.fills td{
+      display:flex;align-items:baseline;justify-content:space-between;gap:14px;
+      border:0;padding:3px 0;text-align:right;white-space:nowrap;
+    }
+    .cmp td::before,.legs td::before,.fills td::before{
+      content:attr(data-l);font-family:-apple-system,sans-serif;font-size:10px;
+      letter-spacing:.07em;text-transform:uppercase;color:var(--dim);flex:none;
+    }
+    .cmp td:first-child,.legs td:first-child,.fills td:first-child{
+      display:block;text-align:left;white-space:normal;margin-bottom:6px;
+    }
+    .cmp td:first-child::before,.legs td:first-child::before,.fills td:first-child::before{content:none}
+    .cmp .val{display:flex;align-items:baseline;gap:7px}
+    .cmp .dsub{margin-top:0}
+    .win td:first-child{box-shadow:none}
+    .win{display:block;box-shadow:inset 3px 0 0 var(--amber);background:rgba(255,176,32,.07)}
+    .win td{background:none}
+    .bar i{font-size:9px}
+    .legs{margin-top:4px}
+  }
+</style>
+</head>
+<body>
+
+<div class="top">
+  <div class="brand">partit<b>i</b>o</div>
+  <div class="chain">Robinhood Chain · 4663</div>
+  <div class="sp"></div>
+  <div class="nowallet"><i class="dot"></i> No wallet connected · quote is live</div>
+</div>
+
+<div class="wrap">
+
+  <!-- ============ TICKET RAIL (secondary) ============ -->
+  <div class="rail">
+    <div class="card">
+      <h2>Order <span class="tag">EIP-712</span></h2>
+      <div class="leg">
+        <div class="lbl">You pay</div>
+        <div class="legrow">
+          <div class="amt">10,000.00</div>
+          <div class="tok"><i class="ic u">U</i> USDG</div>
+        </div>
+        <div class="sub">6 decimals · balance —</div>
+      </div>
+      <div class="leg">
+        <div class="lbl">You receive</div>
+        <div class="legrow">
+          <div class="amt" style="color:var(--amber)">29.5366</div>
+          <div class="tok"><i class="ic a">A</i> AAPL</div>
+        </div>
+        <div class="sub">18 decimals · ≈ $9,998.16</div>
+      </div>
+      <div class="ledger">
+        <div class="lrow"><span>Order size</span><span>10,000.00 USDG</span></div>
+        <div class="lrow zero"><span>Network gas</span><span>$0.00</span></div>
+        <div class="lrow"><span>Relayer fee (repaid in USDG)</span><span>1.84 USDG</span></div>
+        <div class="lrow"><span>Routed to market</span><span>9,998.16 USDG</span></div>
+        <div class="lrow"><span>Effective price</span><span>338.50</span></div>
+        <div class="lrow tot"><span>Net received</span><span>29.5366 AAPL</span></div>
+      </div>
+      <button class="cta">Sign order — 1 signature</button>
+      <div class="ctanote">no ETH · no approval · no gas top-up</div>
+    </div>
+
+    <div class="card">
+      <h2>Settlement</h2>
+      <div class="ledger" style="padding-top:8px">
+        <div class="lrow"><span>Signature</span><span>1 × EIP-712</span></div>
+        <div class="lrow"><span>Gas payer</span><span>relayer</span></div>
+        <div class="lrow"><span>Oracle guard</span><span class="pos">armed</span></div>
+        <div class="lrow"><span>Quote age</span><span>4s</span></div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ============ MAIN: EVIDENCE FIRST ============ -->
+  <div>
+
+    <!-- HERO: the comparison IS the hero -->
+    <div class="card hero">
+      <h2>Net received — every route priced on the same order
+        <span class="tag">10,000 USDG → AAPL · block 71,335,790</span>
+      </h2>
+      <table class="cmp">
+        <thead>
+          <tr>
+            <th>Route</th><th>Venues</th><th>Net received</th><th>Δ vs partitio</th><th>Δ bps</th><th>Δ USD</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr class="win">
+            <td>
+              <div class="rname">partitio <span class="best">BEST</span></div>
+              <div class="rmeta">split across 4 venues · oracle-checked per leg</div>
+            </td>
+            <td data-l="Venues" class="num">4</td>
+            <td data-l="Net received"><div class="val"><div class="net">29.5366</div><div class="dsub">AAPL</div></div></td>
+            <td data-l="Δ vs partitio" class="dlt" style="color:var(--dim)">—</td>
+            <td data-l="Δ bps" class="dlt" style="color:var(--dim)">—</td>
+            <td data-l="Δ USD" class="dlt" style="color:var(--dim)">—</td>
+          </tr>
+          <tr>
+            <td>
+              <div class="rname">KyberSwap</div>
+              <div class="rmeta">aggregator · best of its own graph</div>
+            </td>
+            <td data-l="Venues" class="num">3</td>
+            <td data-l="Net received"><div class="val"><div class="net">29.5106</div><div class="dsub">AAPL</div></div></td>
+            <td data-l="Δ vs partitio" class="dlt neg">−0.0260</td>
+            <td data-l="Δ bps" class="dlt neg">−8.8</td>
+            <td data-l="Δ USD" class="dlt neg">−$8.80</td>
+          </tr>
+          <tr>
+            <td>
+              <div class="rname">Uniswap v4 · USDG 0.30%</div>
+              <div class="rmeta">best single venue · no split</div>
+            </td>
+            <td data-l="Venues" class="num">1</td>
+            <td data-l="Net received"><div class="val"><div class="net">29.4913</div><div class="dsub">AAPL</div></div></td>
+            <td data-l="Δ vs partitio" class="dlt neg">−0.0453</td>
+            <td data-l="Δ bps" class="dlt neg">−15.4</td>
+            <td data-l="Δ USD" class="dlt neg">−$15.33</td>
+          </tr>
+          <tr>
+            <td>
+              <div class="rname">LI.FI</div>
+              <div class="rmeta">aggregator · best of its own graph</div>
+            </td>
+            <td data-l="Venues" class="num">2</td>
+            <td data-l="Net received"><div class="val"><div class="net">29.4788</div><div class="dsub">AAPL</div></div></td>
+            <td data-l="Δ vs partitio" class="dlt neg">−0.0578</td>
+            <td data-l="Δ bps" class="dlt neg">−19.6</td>
+            <td data-l="Δ USD" class="dlt neg">−$19.56</td>
+          </tr>
+        </tbody>
+      </table>
+    </div>
+
+    <div class="two">
+      <!-- ROUTE SPLIT -->
+      <div class="card">
+        <h2>Route split <span class="tag">4 venues · 9,998.16 USDG</span></h2>
+        <div class="bar">
+          <i class="s1" style="width:42%">42%</i>
+          <i class="s2" style="width:31%">31%</i>
+          <i class="s3" style="width:18%">18%</i>
+          <i class="s4" style="width:9%">9%</i>
+        </div>
+        <div class="lgd">
+          <span><i class="sw s1"></i> Rialto MM-02</span>
+          <span><i class="sw s2"></i> Uni v4 0.30%</span>
+          <span><i class="sw s3"></i> Uni v3 0.05%</span>
+          <span><i class="sw s4"></i> Uni v3 0.30%</span>
+        </div>
+        <table class="legs">
+          <thead>
+            <tr><th>Venue</th><th>USDG in</th><th>AAPL out</th><th>Fill</th><th>Oracle Δ</th></tr>
+          </thead>
+          <tbody>
+            <tr>
+              <td><div class="vn"><i class="sw s1"></i> Rialto propAMM <em>MM-02</em></div></td>
+              <td data-l="USDG in">4,199.23</td><td data-l="AAPL out">12.4094</td>
+              <td data-l="Fill">338.39</td><td data-l="Oracle Δ" class="pos">−0.9 bps</td>
+            </tr>
+            <tr>
+              <td><div class="vn"><i class="sw s2"></i> Uniswap v4 <em>USDG/3000</em></div></td>
+              <td data-l="USDG in">3,099.43</td><td data-l="AAPL out">9.1572</td>
+              <td data-l="Fill">338.47</td><td data-l="Oracle Δ" class="pos">+1.5 bps</td>
+            </tr>
+            <tr>
+              <td><div class="vn"><i class="sw s3"></i> Uniswap v3 <em>USDG/500</em></div></td>
+              <td data-l="USDG in">1,799.67</td><td data-l="AAPL out">5.3141</td>
+              <td data-l="Fill">338.66</td><td data-l="Oracle Δ" class="pos">+7.1 bps</td>
+            </tr>
+            <tr>
+              <td><div class="vn"><i class="sw s4"></i> Uniswap v3 <em>USDG/3000</em></div></td>
+              <td data-l="USDG in">899.83</td><td data-l="AAPL out">2.6559</td>
+              <td data-l="Fill">338.81</td><td data-l="Oracle Δ" class="pos">+11.5 bps</td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+
+      <!-- ORACLE -->
+      <div class="card">
+        <h2>Oracle check <span class="tag">per leg, before settle</span></h2>
+        <div class="orc">
+          <div class="obig">
+            <b>+2.4 bps</b>
+            <span class="pass">PASS</span>
+          </div>
+          <div class="oline">size-weighted fill vs Chainlink AAPL/USD</div>
+
+          <div class="gauge">
+            <div class="track"></div>
+            <div class="gzero"></div>
+            <div class="mark"></div>
+            <div class="gl" style="left:0">−85</div>
+            <div class="gl" style="left:50%;transform:translateX(-50%)">0 bps</div>
+            <div class="gl" style="right:0">+85</div>
+          </div>
+
+          <div class="ometa">
+            <div class="orow"><span>Reference</span><span>$338.42</span></div>
+            <div class="orow"><span>Last feed update</span><span>11:18 UTC · 1h 23m</span></div>
+            <div class="orow"><span>Band</span><span>±85 bps</span></div>
+            <div class="orow"><span>Band floor</span><span>50 dev + 30 fee + 5 slip</span></div>
+            <div class="orow"><span>Dead-feed ceiling</span><span>120h</span></div>
+            <div class="orow"><span>Legs outside band</span><span class="pos">0 of 4</span></div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- FILLS -->
+    <div class="card" style="margin-top:18px">
+      <h2>Recent fills <span class="live"><i class="dot"></i> live</span></h2>
+      <table class="fills">
+        <thead>
+          <tr><th>Time</th><th>Order</th><th>Received</th><th>Venues</th><th>Oracle Δ</th><th>Tx</th></tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td>12:41:07</td>
+            <td data-l="Order" class="pair">10,000.00 USDG <i>→</i> AAPL</td>
+            <td data-l="Received">29.5366</td><td data-l="Venues">4</td>
+            <td data-l="Oracle Δ" class="pos">+2.4 bps</td>
+            <td data-l="Tx"><a class="tx" href="#tx-0x7f3a">0x7f3a…c21b</a></td>
+          </tr>
+          <tr>
+            <td>12:40:31</td>
+            <td data-l="Order" class="pair">2,500.00 USDG <i>→</i> SGOV</td>
+            <td data-l="Received">24.7182</td><td data-l="Venues">2</td>
+            <td data-l="Oracle Δ" class="pos">−0.6 bps</td>
+            <td data-l="Tx"><a class="tx" href="#tx-0x1c08">0x1c08…9ef4</a></td>
+          </tr>
+          <tr>
+            <td>12:39:52</td>
+            <td data-l="Order" class="pair">6.0000 TSLA <i>→</i> USDG</td>
+            <td data-l="Received">2,528.94</td><td data-l="Venues">3</td>
+            <td data-l="Oracle Δ" class="pos">+1.9 bps</td>
+            <td data-l="Tx"><a class="tx" href="#tx-0x9b22">0x9b22…40de</a></td>
+          </tr>
+          <tr>
+            <td>12:38:14</td>
+            <td data-l="Order" class="pair">1,000.00 USDG <i>→</i> NVDA</td>
+            <td data-l="Received">5.1975</td><td data-l="Venues">3</td>
+            <td data-l="Oracle Δ" class="pos">+3.1 bps</td>
+            <td data-l="Tx"><a class="tx" href="#tx-0xa4d7">0xa4d7…7b60</a></td>
+          </tr>
+          <tr>
+            <td>12:36:45</td>
+            <td data-l="Order" class="pair">15,000.00 USDG <i>→</i> SGOV</td>
+            <td data-l="Received">148.3092</td><td data-l="Venues">4</td>
+            <td data-l="Oracle Δ" class="pos">+0.8 bps</td>
+            <td data-l="Tx"><a class="tx" href="#tx-0x3e91">0x3e91…12aa</a></td>
+          </tr>
+        </tbody>
+      </table>
+    </div>
+
+  </div>
+</div>
+
+</body>
+</html>

@@ -5,10 +5,14 @@
   "description": "partitio relayer and shared order format. viem is pinned: this code signs next to a funded key, so the crypto is not ours.",
   "scripts": {
     "test:order": "node relayer/order.test.mjs",
-    "test:parity": "node relayer/parity.test.mjs"
+    "test:parity": "node relayer/parity.test.mjs",
+    "test:submit": "node relayer/submit.test.mjs",
+    "test:js": "node relayer/order.test.mjs && node relayer/parity.test.mjs && node relayer/submit.test.mjs"
   },
   "dependencies": {
     "viem": "2.56.9"
   },
-  "engines": { "node": ">=22" }
+  "engines": {
+    "node": ">=22"
+  }
 }

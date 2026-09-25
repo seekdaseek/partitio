@@ -14,6 +14,7 @@ import * as CFG from "./config.mjs";
 import { call, rpcStatus } from "./rpc.mjs";
 import { onChainQuote, tickers, HIDDEN } from "./quote.mjs";
 import { allAggregators } from "./aggregators.mjs";
+import { handleOrder } from "./submit.mjs";
 
 const HERE = path.dirname(new URL(import.meta.url).pathname);
 const log = (...a) => console.log(new Date().toISOString(), ...a);
@@ -119,6 +120,11 @@ async function handleQuote(body, h) {
     chosen: winner?.name ?? null,
     chosenOut: winner?.out.toString() ?? null,
     gainVsBestSinglePoolBps: gainVsSingleBps,
+    // A sell into a pool trading below Chainlink is refused BY THE CONTRACT, so say so here
+    // rather than letting the user sign an order that can only revert. IONQ and RKLB sit
+    // ~11.7% and ~6.3% below their feeds persistently (script/predeploy-bindings.mjs), and
+    // that refusal is the guard working, not a fault.
+    ...sellPauseFor(direction, onChain.oracleDevBps),
     mode: mode(),
     ms: Date.now() - t0,
   };
@@ -131,6 +137,29 @@ async function handleQuote(body, h) {
     out.chosen, out.chosenOut, onChain.oracleOut, onChain.oracleDevBps, null, out.ms);
 
   return { code: 200, out };
+}
+
+/// The app's default band. A fill more than this below Chainlink will not clear the floor the
+/// client signs, so the quote warns before a signature exists rather than after a revert.
+const APP_BAND_BPS = 200;
+const WARN_BPS = 200;
+
+function sellPauseFor(direction, oracleDevBps) {
+  if (oracleDevBps == null) return { oracleWarn: null, sellPaused: false };
+  const belowBps = -oracleDevBps;                       // positive when the pool is under the feed
+  const warn = belowBps >= WARN_BPS
+    ? `on-chain price is ${(belowBps / 100).toFixed(1)}% below Chainlink`
+    : null;
+  if (direction !== "sell" || belowBps < APP_BAND_BPS) {
+    return { oracleWarn: warn, sellPaused: false };
+  }
+  return {
+    oracleWarn: warn,
+    sellPaused: true,
+    sellPausedReason:
+      `sells paused: best on-chain price is ${(belowBps / 100).toFixed(1)}% below Chainlink, ` +
+      `which is outside the ${APP_BAND_BPS / 100}% band the app signs`,
+  };
 }
 
 let TOKENS = null;
@@ -184,12 +213,26 @@ const server = http.createServer(async (req, res) => {
       return json(res, code, out);
     }
     if (u.pathname === "/api/order" && req.method === "POST") {
+      if (!rateOk(h)) return json(res, 429, { error: "rate limited", scope: "ip", perMinute: CFG.QUOTE_RATE_PER_MIN });
       const m = mode();
       if (!m.trading) return json(res, 503, { error: "trading paused", reason: m.reason, quotesStillWork: true });
-      return json(res, 501, { error: "order submission lands with the contract deploy" });
+      const body = await readBody(req);
+      // `send` is deliberately NOT passed: this build validates, re-quotes and SIMULATES, and
+      // returns what would happen. Broadcasting is wired separately once the hot key is on the
+      // box, so that no code path can send a transaction by accident before then.
+      const { code, out } = await handleOrder(body, {});
+      return json(res, code, out);
+    }
+    // Simulation without the trading gate, so the e2e matrix can exercise the refusals on a fork
+    // before anything is deployed to mainnet.
+    if (u.pathname === "/api/order/simulate" && req.method === "POST") {
+      if (!rateOk(h)) return json(res, 429, { error: "rate limited", scope: "ip" });
+      const body = await readBody(req);
+      const { code, out } = await handleOrder(body, { entryAddress: body.entry ?? CFG.GASLESS_ENTRY });
+      return json(res, code, out);
     }
     if (req.method === "GET" && serveStatic(req, res, u.pathname)) return;
-    return json(res, 404, { error: "not found", routes: ["/api/health", "/api/tickers", "/api/quote", "/api/stats"] });
+    return json(res, 404, { error: "not found", routes: ["/api/health", "/api/tickers", "/api/quote", "/api/order", "/api/order/simulate", "/api/stats"] });
   } catch (e) {
     log("request failed:", e.message);
     return json(res, 500, { error: String(e.message || e) });
