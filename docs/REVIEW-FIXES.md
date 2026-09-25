@@ -279,3 +279,96 @@ has no field to carry an order hash), and it is not the kind of change to make i
 **The pitch gets reworded, not the contract**: "two signatures, zero gas, no ETH ever". The
 honest claim is that the user never needs ETH and never sends a transaction, which is the part that
 is actually unusual.
+
+---
+
+## 10. The single hunter on the unreviewed diff (2026-09-25)
+
+One adversarial pass over `git diff b507c6c..HEAD -- src/` — the ~90 lines of money code that had
+not been independently reviewed. **No HIGH, no MEDIUM.** Four LOWs, three corrections to my own
+description of the diff, and one process finding. Seventeen PoCs live in `test/hunt/` and all
+seventeen reproduce.
+
+### Corrections to what I said the diff contained
+
+I got two things wrong describing my own work, and the hunter caught both by reading
+`git show b507c6c:` rather than taking the list at face value.
+
+- **`feedOf`, the constructor map and `feedFor` already existed at `b507c6c`.** The only
+  feed-binding change in this diff is the duplicate-FEED loop. I listed the whole binding as new.
+- **The diff contains a router change I did not list:** `unlockCallback` now consumes its payload
+  binding with `tstore(su, 0)` ON ENTRY (`PartitioRouterV2.sol:361`). An undocumented money-path
+  change on an immutable contract is worse than a documented one; it is the fix behind
+  `test_H3_secondUnlockCallbackInOneUnlockIsRefused` and it belongs in the list.
+- **The buy-side fee CAP is algebraically unchanged by this diff.** With `S = amountIn − fee`,
+  `feeDue/feeBasis = (fee·s/S) / (s + fee·s/S) = fee/(S + fee) = fee/amountIn` — `s` cancels
+  exactly, so the new percentage check is identical to the old one, just evaluated after the swap.
+  The fix is the pro-rata NUMERATOR, not the cap, and saying "the cap now binds against what really
+  happened" overstated it. Relatedly, `if (feeDue > fee) feeDue = fee;` is unreachable: the two
+  `forceApprove` bounds make `spent ≤ spendable` structural. It is dead defensive code.
+
+### LOW-1 — the duplicate-feed check does not catch a TRANSPOSITION
+
+`PartitioRouterV2.sol:135-137` compares each feed against every earlier one, so one feed on two
+tokens is rejected. Two tokens whose feeds are SWAPPED are two distinct addresses and pass. That is
+the same miswiring class the comment cites (CRWV pointed at CRCL's aggregator), and measured, AAPL
+bound to AMZN's feed moves the reference 2,525 bps — outside `MAX_DEV_BPS`, so the band cannot
+absorb it. Buys become permanently unfillable; sells let a relayer pay ~25% under fair value.
+
+**Not fixed on-chain, deliberately.** The only constructor-level defence is a third array of
+expected `description()` hashes — but those hashes would be produced by the same deploy script that
+produces the feed list, so a transposition there yields matching wrong hashes and the check passes.
+It buys nothing against the failure it is named for. The real net is off-chain and already exists:
+`script/predeploy-bindings.mjs` builds the constructor args from a ticker-keyed join, asserts
+`feed.description()` carries the ticker, and cross-checks the answer against the deepest v3 pool mid
+at 2%. The comment in the constructor now claims only what it does.
+PoC: `test_hunt3_constructorAcceptsAFullySwappedFeedMap`.
+
+### LOW-2 — a 1-99 wei remainder bricks an otherwise honest fill
+
+`GaslessEntry.sol:368-373`. The accepted-aggregator branch no longer returns, so the fall-through
+runs unconditionally on `spendable - spent`. On a BUY (6dp in, 18dp out) a leftover of 1-99 wei of
+USDG buys zero stock, and the router's own guard sees `spent > 0` with nothing delivered and reverts
+the whole fill. Measured cliff: 0 wei settles, 1 and 10 wei revert, 100 wei and up settle. The sell
+side is immune — an 18dp remainder rounds the 6dp floor to zero.
+
+Nothing is lost: the revert rolls back `executed[orderHash]` and no funds move. **Fixed in the
+relayer, not the contract.** The relayer writes the aggregator calldata, so it chooses the
+remainder; and `submit.mjs` simulates before it broadcasts, so a bricking route is refused rather
+than sent. Adding a dust constant to an immutable contract to paper over a relayer's own sizing bug
+is the worse trade days before deployment. What WAS wrong was the sentence the trader saw: a
+zero-output floor breach now says "the route left an unroutable remainder — this is a relayer bug,
+not your order" instead of blaming the price.
+PoCs: `test_hunt1_oneWeiRemainderBricksTheWholeFill`, `test_huntCliff_whichLeftoverSizesBrickTheFill`.
+
+### LOW-3 — `maxFeedAge` and a future-dated feed: NOT ACTIONABLE, and I checked
+
+Reported as "the bound fails open on a feed dated ahead of the chain clock", with a signed
+comparison as the fix. I applied the proposed fix and re-ran the hunter's own four tests: **all four
+pass identically.** With `age = -299` and `maxFeedAge = 0`, `-299 > 0` is false, so the signed form
+permits exactly what the unsigned form permits. The fix is a no-op.
+
+It is also the right semantics. A feed dated ahead is not "older than N" under any reading, the
+window is bounded to 5 minutes by `MAX_AHEAD_SECONDS`, and a feed further ahead than that reverts
+with `FeedFromTheFuture`. No change.
+
+### LOW-4 — `maxFeedAge == 0` is not rejected on-chain, unlike `minOut == 0`
+
+True, and the consequence is a dead order rather than lost funds — `executed[orderHash]` survives
+the revert. The hunter's sharper observation is the useful one: measured live, AAPL's feed was
+58,830 s (16.3 h) old, so ANY value tight enough to bound a market gap bricks the order, and any
+value loose enough to fill is far wider than the gap.
+
+That is the field's real job, and the relayer already implements it:
+`marketOrderDefaults` signs `maxFeedAge = feedAgeAtQuote + deadline + headroom`, i.e. **relative to
+the age actually observed at quote time**. It does not bound staleness in the abstract; it stops a
+relayer sitting on a signed order waiting for the reference to go staler than it was when the user
+agreed to the price. `rejectReasonForMarketOrder` refuses zero before any RPC call.
+
+### The process finding, which is mine to own
+
+The hunter watched `src/v2/OracleGuard.sol` change under it three times while it read — my own SGOV
+negative controls, which shift every oracle floor by 51 bps. It handled that correctly: it worked
+from a `git archive HEAD` copy and verified the md5 of all three sources before and after its final
+run. It should not have had to. **A read-only agent reading the working tree and a negative control
+mutating it cannot both run at once**; the controls belong in a worktree or the agent does.

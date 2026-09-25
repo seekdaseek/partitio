@@ -169,6 +169,14 @@ const ionq = refusalSentence({ name: "BelowOracleFloor", detail: "" }, { directi
 check("an IONQ-shaped sell refusal names the gap", /11\.7% below Chainlink/.test(ionq), ionq);
 console.log("    " + ionq);
 
+// A floor breach with got == 0 means we sized the aggregator's calldata badly, not that the price
+// moved. Saying "the price moved" there is a lie that costs a support cycle.
+const dust = refusalSentence({ name: "BelowOracleFloor", detail: "0, 2884026238, 1790279713" }, { direction: "buy" });
+check("a zero-output floor breach is named as our bug", /relayer bug/.test(dust), dust);
+const realPrice = refusalSentence({ name: "BelowOracleFloor", detail: "8752400000, 8900000000, 1790279713" }, { direction: "sell", oracleDevBps: -1172 });
+check("a real price breach still reads as a price breach", /below Chainlink/.test(realPrice), realPrice);
+console.log("    " + dust);
+
 const staleSentence = refusalSentence({ name: "FeedOlderThanSignerAllows", detail: "" }, {});
 check("a stale-reference refusal tells the user to re-sign", /re-quote/i.test(staleSentence), staleSentence);
 console.log("    " + staleSentence);

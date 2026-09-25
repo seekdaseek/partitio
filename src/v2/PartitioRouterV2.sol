@@ -128,10 +128,19 @@ contract PartitioRouterV2 is IUniswapV3SwapCallback, IUnlockCallback {
         for (uint256 i = 0; i < stockTokens.length; i++) {
             if (stockTokens[i] == address(0) || feeds[i] == address(0)) revert FeedMapBad();
             if (feedOf[stockTokens[i]] != address(0)) revert FeedMapBad(); // duplicate token key
-            // A duplicate FEED across two different tokens is the exact miswiring that already
-            // happened on this chain once: the recon table picked "first Morpho market per ticker",
-            // which pointed CRWV at CRCL's aggregator. Deploy-time only, and the immutables are
-            // forever, so it is worth the loop.
+            // A duplicate FEED across two different tokens is one shape of the miswiring that
+            // already happened on this chain: the recon table picked "first Morpho market per
+            // ticker", which pointed CRWV at CRCL's aggregator. Deploy-time only, and the
+            // immutables are forever, so it is worth the loop.
+            //
+            // WHAT THIS DOES NOT CATCH: a TRANSPOSITION. Two tokens whose feeds are swapped are
+            // two distinct addresses and pass here. Measured, AAPL bound to AMZN's feed moves the
+            // reference 2,525 bps - outside MAX_DEV_BPS, so the band cannot absorb it. Nothing
+            // cheap fixes that on-chain: expected-description hashes would be produced by the same
+            // deploy script that produces this list, so a transposition there yields matching wrong
+            // hashes. The net for that case is script/predeploy-bindings.mjs, which builds these
+            // arrays from a ticker-keyed join, asserts feed.description() carries the ticker, and
+            // cross-checks each answer against the deepest v3 pool mid at 2%.
             for (uint256 j = 0; j < i; j++) {
                 if (feeds[j] == feeds[i]) revert FeedMapBad();
             }

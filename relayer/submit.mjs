@@ -77,10 +77,23 @@ export function explainRevert(data) {
 /** Human sentence for the refusals a trader will actually hit. */
 export function refusalSentence(err, ctx = {}) {
   switch (err.name) {
-    case "BelowOracleFloor":
+    case "BelowOracleFloor": {
+      // A floor breach with got == 0 is not a price problem, it is OUR problem. The accepted
+      // aggregator branch falls through to partitio with `spendable - spent`, and on a buy a
+      // remainder of 1-99 wei of USDG buys zero stock: the router's own guard then sees spent > 0
+      // with nothing delivered and reverts the whole fill. Measured cliff: 0 wei settles, 1 and
+      // 10 wei revert, 100 wei and above settle. Nothing is lost - the revert rolls back
+      // `executed[orderHash]` and no funds move - but telling a trader "the price moved" when the
+      // real cause is how WE sized the aggregator's calldata is the kind of lie that wastes a
+      // support cycle. Re-quoting with a remainder of zero or a material size fixes it.
+      const got = String(err.detail || "").split(",")[0].trim();
+      if (got === "0") {
+        return "the route left an unroutable remainder — this is a relayer bug, not your order; re-quoting";
+      }
       return ctx.direction === "sell" && ctx.oracleDevBps != null
         ? `sells paused: the best on-chain price is ${Math.abs(ctx.oracleDevBps / 100).toFixed(1)}% below Chainlink`
         : "the fill would land below the Chainlink floor you signed";
+    }
     case "FeedOlderThanSignerAllows":
       return "the price reference is older than this order allows; re-quote and sign again";
     case "MinOutRequired":
