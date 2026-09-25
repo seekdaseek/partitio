@@ -372,3 +372,69 @@ negative controls, which shift every oracle floor by 51 bps. It handled that cor
 from a `git archive HEAD` copy and verified the md5 of all three sources before and after its final
 run. It should not have had to. **A read-only agent reading the working tree and a negative control
 mutating it cannot both run at once**; the controls belong in a worktree or the agent does.
+
+---
+
+## 11. The 2% default band, measured before it shipped (2026-09-25)
+
+R-11 was left PARTIAL with the note "keep the 20% max band; the app default is 2% (app policy, not
+contract)" and no test — an app policy nobody had measured. This is the measurement.
+
+**Method.** 37 collector runs, 2026-09-24 14:39 UTC to 2026-09-25 12:13 UTC, 18 tickers × 4 sizes ×
+2 directions = 4,898 cells. The evidence database records what every venue quoted and **no oracle
+reference at all**, so the Chainlink reference is rebuilt per run from ARCHIVE state at that run's
+own block — comparing an eighteen-hour-old fill against today's price answers nothing. "Refused"
+means the best output partitio could actually deliver (its own split, or its best single venue) sits
+below `ref × 0.98`. `evidence/band-measure.mjs`.
+
+**A methodology failure worth recording, because it is the same one the collector was just fixed
+for.** The archive endpoint allows 15 requests/second and counts every call in a JSON-RPC batch
+individually. 25-call batches came back HTTP 200 with per-item rate-limit errors, which the first
+version of the script swallowed as nulls: **157 of 666 references fetched**, and the surviving
+sample changed between runs. A decimated sample reads exactly like a thin market, which is the
+thing being measured. Eight calls paced at 700 ms gives 666/666, and the script now exits 2 rather
+than report above 2% missing.
+
+### The answer: the band refuses on SIZE, not on ticker
+
+| rung | open hours, refused | median deviation | closed hours, refused |
+|---|---|---|---|
+| $1,000 | **0.8%** | −8 bps | 0.0% |
+| $10,000 | **1.2%** | −17 bps | 0.0% |
+| $100,000 | 11.9% | −52 bps | 7.4% |
+| $500,000 | **44.2%** | −170 bps | 44.5% |
+
+Overall: 7.4% of open-hours cells refused, 7.3% of closed-hours cells. **Market hours are not the
+driver** — the two are within a point of each other, and the $1k–$10k band is actually *cleaner*
+when the market is shut. Size is the driver, and the effect is an order of magnitude.
+
+Every per-ticker "refused 25.0%" in the raw table is one of the four size rungs, not a property of
+the ticker. Cut to $1k–$10k, open hours: 507 cells, **1.0% refused**, and the three refusals are
+COIN×2, DELL×2, TSM×1.
+
+### Does any liquid ticker breach 5% in open hours at retail size?
+
+**No.** At $1k–$10k no ticker exceeds 2%. The only names that breach 5% below $100k are the thin
+ones, and they breach because the price genuinely is bad, not because the band is wrong:
+
+| ticker | $1k | $10k | $100k |
+|---|---|---|---|
+| DELL buy | −63 bps (14% refused) | −92 bps (14%) | **−303 bps (100%)** |
+| TSM buy | −52 bps (0%) | −72 bps (0%) | **−323 bps (100%)** |
+| TSM sell | −81 bps (0%) | −100 bps (17%) | **−282 bps (100%)** |
+| COIN sell | −22 bps (14%) | −33 bps (14%) | −143 bps (29%) |
+
+DELL and TSM at $100,000 are refused *every single time*. That is the guard working: a $100k order
+in those pools moves the price 3% and the user should not eat it silently.
+
+### What I am proposing, with the numbers behind it
+
+1. **Keep 200 bps as the default.** It refuses 1% of trades at the sizes real users trade and it
+   catches 100% of the cases where a thin pool would have cost someone 3%. No change.
+2. **Cap the default order size, or widen the band explicitly above it.** At $500k the band refuses
+   44% of the time across every ticker — that is not a price signal, it is the product being used
+   outside the liquidity it has. The honest UI is a size warning with the measured number, not a
+   silently wider band.
+3. **Do not widen the band for thin names.** Widening to 300 bps drops open-hours refusals from
+   7.4% to 4.8%, but every trade it lets through is one where a user pays 2-3% over the mark on a
+   name whose pool is 40 times too small. The refusal is the product working.
