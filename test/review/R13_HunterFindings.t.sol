@@ -2,6 +2,7 @@
 pragma solidity ^0.8.26;
 
 import {ReviewBase, console2} from "./ReviewBase.sol";
+import {Vm} from "forge-std/Vm.sol";
 import {SkimmingAggregator, ShortFillPair} from "./Mocks.sol";
 import {IUSDG} from "../../src/v2/IUSDG.sol";
 import {GaslessEntry} from "../../src/v2/GaslessEntry.sol";
@@ -145,6 +146,59 @@ contract R13_HunterFindings is ReviewBase {
         console2.log("fee taken:", feeTaken);
         assertEq(feeTaken, fee, "the whole order was spent, so the whole fee is earned");
         assertLe(feeTaken * 10_000, amt * entry.MAX_FEE_BPS(), "fee above the cap on what changed hands");
+    }
+
+    /// H-1 POSTSCRIPT, found by the re-verification judge INSIDE the fix: `_fillSingle` set the
+    /// named return `usedAgg = true` on the accept branch and then ended with
+    /// `return (got, spent, false)`, so `OrderFilled.usedAggregator` was always false. No funds at
+    /// risk - and that is exactly why it would have shipped. It blinds off-chain monitoring of the
+    /// one branch that carried the hole, on a contract that cannot be patched, so the flag is
+    /// asserted here in both directions rather than trusted.
+    function test_H1_theUsedAggregatorFlagReportsTheBranchThatActuallyRan() public {
+        uint256 amt = 1000e6;
+        uint256 fee = 5e6;
+        uint256 spendable = amt - fee;
+
+        // --- aggregator path: it consumes the WHOLE order at an honest price, so it is accepted
+        deal(USDG, user, amt);
+        uint256 honest = (_oracleAapl(spendable) * 9_990) / 10_000;
+        deal(AAPL, address(agg), honest);
+
+        GaslessEntry.Order memory o = _buyOrder(amt, fee, 0, bytes32(uint256(135)));
+        GaslessEntry.Route memory r = GaslessEntry.Route({
+            aggregator: address(agg),
+            callData: abi.encodeCall(SkimmingAggregator.swap, (USDG, spendable, AAPL, honest, address(agg))),
+            aggMinOut: 0,
+            legs: _legs1(0, spendable)
+        });
+        vm.recordLogs();
+        vm.prank(relayer);
+        entry.fill(o, _auth(o), r, fee);
+        assertTrue(_usedAggregatorFromLogs(), "the aggregator branch must report itself");
+
+        // --- router path: same shape, no aggregator
+        deal(USDG, user, amt);
+        GaslessEntry.Order memory o2 = _buyOrder(amt, fee, 0, bytes32(uint256(136)));
+        vm.recordLogs();
+        vm.prank(relayer);
+        entry.fill(o2, _auth(o2), _routerRoute(spendable), fee);
+        assertFalse(_usedAggregatorFromLogs(), "and the partitio branch must not claim it");
+    }
+
+    /// Reads the last `OrderFilled` out of the recorded logs and returns its `usedAggregator`.
+    function _usedAggregatorFromLogs() internal returns (bool used) {
+        Vm.Log[] memory logs = vm.getRecordedLogs();
+        bytes32 sig = keccak256(
+            "OrderFilled(address,bytes32,address,address,address,uint256,uint256,uint256,bool)"
+        );
+        bool seen;
+        for (uint256 i = 0; i < logs.length; i++) {
+            if (logs[i].topics.length == 0 || logs[i].topics[0] != sig) continue;
+            (,,,,, used) =
+                abi.decode(logs[i].data, (address, address, uint256, uint256, uint256, bool));
+            seen = true;
+        }
+        assertTrue(seen, "no OrderFilled was emitted at all");
     }
 
     // ---------------------------------------------------------------- H-2, genuinely short

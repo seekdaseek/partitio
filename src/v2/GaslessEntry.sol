@@ -371,6 +371,10 @@ contract GaslessEntry is EIP712, ReentrancyGuardTransient {
             got += got2;
             spent += spent2;
         }
-        return (got, spent, false);
+        // `usedAgg`, not `false`. The named return was set on the accept branch above and then
+        // thrown away here, so OrderFilled.usedAggregator was ALWAYS false - blinding off-chain
+        // monitoring of precisely the branch that carried the sliver hole, on a contract that
+        // cannot be patched. Harmless to funds, which is exactly why it would have survived.
+        return (got, spent, usedAgg);
     }
 }

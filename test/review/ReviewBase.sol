@@ -137,6 +137,24 @@ abstract contract ReviewBase is Test {
         a = GaslessEntry.Auth({v: v, r: r, s: s, pv: pv, pr: pr, ps: ps, validAfter: 0, validBefore: o.deadline});
     }
 
+    /// Same as `_auth`, for a test that deploys its OWN entry (a different venue root). The
+    /// verifying contract is part of the EIP-712 domain AND of the EIP-3009 payee, so a signature
+    /// made for the fixture's `entry` is not valid for another instance - which is the point.
+    function _authFor(GaslessEntry e, GaslessEntry.Order memory o)
+        internal
+        view
+        returns (GaslessEntry.Auth memory a)
+    {
+        bytes32 oh = e.hashOrder(o);
+        (uint8 v, bytes32 r, bytes32 s) = vm.sign(userPk, oh);
+        bytes32 ds = IUSDGDomain(USDG).DOMAIN_SEPARATOR();
+        bytes32 structHash =
+            keccak256(abi.encode(RECEIVE_TYPEHASH, o.owner, address(e), o.amountIn, uint256(0), o.deadline, oh));
+        bytes32 digest = keccak256(abi.encodePacked("\x19\x01", ds, structHash));
+        (uint8 pv, bytes32 pr, bytes32 ps) = vm.sign(userPk, digest);
+        a = GaslessEntry.Auth({v: v, r: r, s: s, pv: pv, pr: pr, ps: ps, validAfter: 0, validBefore: o.deadline});
+    }
+
     /// @dev Legs must sum to exactly the spendable amount since R-04, so routes are built from it.
     function _routerRoute(uint256 spendable) internal view returns (GaslessEntry.Route memory) {
         return GaslessEntry.Route({

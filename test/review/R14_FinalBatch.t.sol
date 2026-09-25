@@ -6,6 +6,7 @@ import {GaslessEntry} from "../../src/v2/GaslessEntry.sol";
 import {OracleGuard} from "../../src/v2/OracleGuard.sol";
 import {PartitioRouterV2} from "../../src/v2/PartitioRouterV2.sol";
 import {ShortFillPair} from "./Mocks.sol";
+import {IUSDG} from "../../src/v2/IUSDG.sol";
 import {IPoolManager} from "../../src/interfaces/IPoolManager.sol";
 import {IERC20} from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 
@@ -162,15 +163,98 @@ contract R14_FinalBatch is ReviewBase {
             0, address(this), block.timestamp + 300
         );
 
-        // the maker declined 320e6; the fallback offered that to the v3 leg, whose own signed leg
-        // was only 200e6 - a leaf-derived budget would have rejected the settlement
-        uint256 consumedByPool = IERC20(USDG).balanceOf(address(this));
-        console2.log("maker leg:", makerLeg);
-        console2.log("pool leg:", poolLeg);
+        // THE DISCRIMINATING ASSERTION. `assertGt(got, 0)` and "the router holds nothing" both
+        // hold under the BROKEN hypothesis too: `_execute`'s v3 path wraps the pool call in
+        // `try {} catch {}`, so a leaf-derived budget would make the fallback revert INSIDE the
+        // catch, leave `unfilled` at 320e6, refund it to the caller, and still settle the maker's
+        // 480e6 with a non-zero `got` and an empty router. Only the amount the POOL consumed
+        // separates the two worlds, so that is what is asserted.
+        uint256 refunded = IERC20(USDG).balanceOf(address(this));
+        uint256 makerTook = (makerLeg * 6_000) / 10_000;              // the pair's fixed 60%
+        uint256 consumedByPool = amt - refunded - makerTook;
+        console2.log("maker leg:", makerLeg, "maker took:", makerTook);
+        console2.log("pool leg:", poolLeg, "pool consumed:", consumedByPool);
         console2.log("AAPL out:", got);
         assertGt(got, 0, "the route must still settle");
         assertEq(IERC20(USDG).balanceOf(address(r2)), 0, "router must hold nothing");
-        consumedByPool; // balances are asserted above; this keeps the intent readable
+        assertGt(
+            consumedByPool, poolLeg,
+            "the pool must absorb MORE than its own signed leg - this is the whole claim, and it is "
+            "the only assertion here that a leaf-derived budget would fail"
+        );
+    }
+
+    // ------------------------------------------------ the maker-leg grief shape
+
+    /// JUDGE RESIDUAL, carried forward as a KNOWN SHAPE rather than a fixed bug.
+    ///
+    /// `PartitioRouterV2:223` skips MAKER legs in the fallback loop - deliberately, because a maker
+    /// that declined its own leg will decline a larger one, and re-offering it costs gas for
+    /// nothing. The consequence is that an ALL-MAKER leg set whose maker consumes a sliver leaves
+    /// the rest unspent: `spent > 0` dodges `NothingRouted`, and the aggregate oracle floor passes
+    /// because a sliver priced honestly is still honest. Pro-rata pricing removed the PROFIT in
+    /// that shape (H-1/H-2 above) but not the GRIEF - a relayer willing to burn its own gas can
+    /// still consume a user's order hash for a token fill.
+    ///
+    /// The bound that actually stops it is `o.minOut`, and the contract only requires that to be
+    /// non-zero. So this test states the real rule in the only place it can be stated - a test -
+    /// and it is why `relayer/order.mjs` derives `minOut` from the quote instead of defaulting it.
+    function test_makerSliverGrief_isStoppedByARealisticMinOutNotByTheContract() public {
+        uint256 amt = 1000e6;
+        uint256 fee = 5e6;
+        uint256 spendable = amt - fee;
+
+        // a maker that takes 0.1% of whatever it is offered and declines the rest
+        ShortFillPair pair = new ShortFillPair(USDG, AAPL, 10);
+        PartitioRouterV2.Venue memory mv =
+            PartitioRouterV2.Venue(PartitioRouterV2.Kind.MAKER, address(pair), USDG, AAPL, 0, 0, address(0));
+        bytes32 root = keccak256(bytes.concat(keccak256(abi.encode(mv))));
+
+        address[] memory toks = new address[](1);
+        address[] memory fds = new address[](1);
+        toks[0] = AAPL; fds[0] = AAPL_FEED;
+        PartitioRouterV2 mrouter = new PartitioRouterV2(IPoolManager(PM), root, toks, fds);
+        GaslessEntry mentry =
+            new GaslessEntry(IUSDG(USDG), mrouter, [address(0), address(0), address(0), address(0)]);
+
+        uint256 sliver = (spendable * 10) / 10_000;
+        uint256 honest = (_oracleAapl(sliver) * 9_990) / 10_000;   // an honest price, on a sliver
+        deal(AAPL, address(pair), honest * 4);
+        pair.setGive(honest);
+
+        PartitioRouterV2.Leg[] memory legs = new PartitioRouterV2.Leg[](1);
+        legs[0] = PartitioRouterV2.Leg(mv, new bytes32[](0), spendable);
+        GaslessEntry.Route memory r =
+            GaslessEntry.Route({aggregator: address(0), callData: "", aggMinOut: 0, legs: legs});
+
+        // ---- half A: a one-wei floor. The grief LANDS: the order hash is consumed for a 0.1% fill.
+        {
+            deal(USDG, user, amt);
+            GaslessEntry.Order memory o = _buyOrder(amt, fee, 1, bytes32(uint256(151)));
+            GaslessEntry.Auth memory a = _authFor(mentry, o);
+            vm.prank(relayer);
+            uint256 out = mentry.fill(o, a, r, fee);
+            console2.log("sliver spent:", sliver, "of spendable:", spendable);
+            console2.log("AAPL delivered on a one-wei floor:", out);
+            assertGt(out, 0, "it does fill - that is the grief");
+            assertTrue(mentry.executed(mentry.hashOrder(o)), "and the order hash is burned");
+            assertApproxEqRel(out, honest, 1e15, "at an honest price, which is why the guard passed");
+        }
+
+        // ---- half B: the floor a quoted order actually carries. The grief REVERTS, and because it
+        //      reverts the `executed` write rolls back with it - the user's order is still live.
+        {
+            deal(USDG, user, amt);
+            uint256 realistic = (_oracleAapl(spendable) * 9_900) / 10_000;   // 99% of the full order
+            GaslessEntry.Order memory o = _buyOrder(amt, fee, realistic, bytes32(uint256(152)));
+            GaslessEntry.Auth memory a = _authFor(mentry, o);
+            bytes32 oh = mentry.hashOrder(o);
+            vm.prank(relayer);
+            vm.expectPartialRevert(GaslessEntry.OutputBelowMin.selector);
+            mentry.fill(o, a, r, fee);
+            assertFalse(mentry.executed(oh), "a reverted grief must not consume the order");
+            assertEq(IERC20(USDG).balanceOf(user), amt, "and must not move the user's funds");
+        }
     }
 
     // ------------------------------------------------ PARTIAL rebuttal: gross vs net floor
