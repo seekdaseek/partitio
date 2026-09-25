@@ -1,0 +1,791 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>partitio — desk</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500;600&family=IBM+Plex+Sans:wght@400;500;600;700&display=swap" rel="stylesheet">
+<style>
+/* ============================================================================
+   DIRECTION A v2 — "the desk"
+   One console for the whole board. Every constraint is a column, never a modal.
+   ========================================================================= */
+:root{
+  --bg:#07090F; --panel:#0C1018; --panel2:#11161F; --raise:#161C27;
+  --line:#1C2431; --line2:#141A24;
+  --ink:#E7ECF4; --mut:#7B899E; --dim:#4E5B70; --faint:#333E4E;
+  --amber:#FFAE1A; --amber-d:#3A2A06;
+  --teal:#35D6A4; --teal-d:#06241A;
+  --coral:#FF6B5E; --coral-d:#2E0F0C;
+  --blue:#5AA2FF; --violet:#9B8CFF; --cyan:#2FC9D4;
+  --mono:"IBM Plex Mono",ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;
+  --sans:"IBM Plex Sans",-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif;
+}
+*{box-sizing:border-box;margin:0;padding:0}
+html,body{background:var(--bg)}
+body{
+  color:var(--ink);font-family:var(--sans);font-size:13px;line-height:1.45;
+  -webkit-font-smoothing:antialiased;
+  background-image:linear-gradient(180deg,#0A0E16 0,#07090F 340px);
+}
+.m{font-family:var(--mono);font-variant-numeric:tabular-nums;letter-spacing:-.01em}
+.pos{color:var(--teal)} .neg{color:var(--coral)} .amb{color:var(--amber)}
+button{font:inherit;color:inherit;background:none;border:0;cursor:pointer}
+a{color:var(--blue);text-decoration:none;border-bottom:1px dotted rgba(90,162,255,.38)}
+a:hover{border-bottom-style:solid}
+
+/* ---------- chrome ---------- */
+.bar{
+  display:flex;align-items:center;gap:14px;flex-wrap:wrap;
+  padding:8px 16px;border-bottom:1px solid var(--line);background:var(--panel);
+}
+.logo{font-weight:700;font-size:15px;letter-spacing:-.03em;white-space:nowrap}
+.logo b{color:var(--amber)}
+.tag{
+  font-family:var(--mono);font-size:10.5px;color:var(--mut);white-space:nowrap;
+  border:1px solid var(--line);border-radius:4px;padding:2px 7px;
+}
+.bar .gap{flex:1 1 20px}
+
+/* session strip: the trading day as a bar */
+.sess{display:flex;align-items:center;gap:10px;min-width:232px;flex:0 1 320px}
+.sess .txt{font-family:var(--mono);font-size:10.5px;white-space:nowrap}
+.sess .txt b{font-weight:600}
+.sesbar{position:relative;flex:1;height:5px;border-radius:3px;background:var(--line2);overflow:hidden;min-width:70px}
+.sesbar .rth{position:absolute;top:0;bottom:0;left:56.25%;width:27.08%;background:var(--faint)}
+.sesbar .rth.on{background:rgba(53,214,164,.42)}
+.sesbar .now{position:absolute;top:-3px;width:2px;height:11px;background:var(--amber);border-radius:1px}
+.pill{
+  font-family:var(--mono);font-size:10.5px;padding:2px 7px;border-radius:4px;white-space:nowrap;
+  border:1px solid transparent;
+}
+.pill.ok{color:var(--teal);background:var(--teal-d);border-color:rgba(53,214,164,.26)}
+.pill.warn{color:var(--amber);background:var(--amber-d);border-color:rgba(255,174,26,.26)}
+.pill.bad{color:var(--coral);background:var(--coral-d);border-color:rgba(255,107,94,.28)}
+.pill.mute{color:var(--mut);background:var(--panel2);border-color:var(--line)}
+.dot{width:6px;height:6px;border-radius:50%;background:var(--teal);display:inline-block;flex:none}
+.dot.warn{background:var(--amber)} .dot.bad{background:var(--coral)} .dot.off{background:var(--faint)}
+
+/* ---------- grid ---------- */
+.desk{
+  display:grid;grid-template-columns:296px 364px minmax(0,1fr);
+  gap:12px;padding:12px 16px 0;align-items:start;max-width:1760px;
+}
+@media(max-width:1280px){ .desk{grid-template-columns:286px minmax(0,1fr)} .desk .ev{grid-column:1/-1} }
+@media(max-width:880px){ .desk{grid-template-columns:minmax(0,1fr);padding:10px 10px 0} .desk .ev{grid-column:auto} }
+/* On a real desk the board and the ticket stay put while the evidence scrolls past them. */
+@media(min-width:1281px){
+  .desk>div:nth-child(1),.desk>div:nth-child(2){
+    position:sticky;top:12px;max-height:calc(100vh - 24px);overflow-y:auto;
+    scrollbar-width:thin;scrollbar-color:var(--line) transparent;
+  }
+  .desk>div::-webkit-scrollbar{width:7px}
+  .desk>div::-webkit-scrollbar-thumb{background:var(--line);border-radius:4px}
+  .desk>div::-webkit-scrollbar-track{background:transparent}
+}
+
+.p{background:var(--panel);border:1px solid var(--line);border-radius:7px;overflow:hidden}
+.p+.p{margin-top:12px}
+.ph{
+  display:flex;align-items:center;gap:8px;padding:8px 11px;border-bottom:1px solid var(--line);
+  font-family:var(--mono);font-size:10px;font-weight:600;letter-spacing:.13em;text-transform:uppercase;color:var(--mut);
+  background:var(--panel2);
+}
+.ph .r{margin-left:auto;font-weight:400;letter-spacing:.02em;text-transform:none;color:var(--dim);font-size:10.5px;text-align:right}
+
+/* ---------- board ---------- */
+.bd{width:100%;border-collapse:collapse;font-family:var(--mono)}
+.bd th{
+  font-size:9.5px;letter-spacing:.08em;text-transform:uppercase;color:var(--faint);font-weight:500;
+  padding:6px 8px 5px;text-align:right;border-bottom:1px solid var(--line2);
+}
+.bd th:first-child{text-align:left}
+.bd td{padding:5px 8px;text-align:right;font-size:11px;white-space:nowrap}
+.bd td:first-child{text-align:left}
+.bd tr.row{cursor:pointer;border-left:2px solid transparent}
+.bd tr.row:hover td{background:var(--panel2)}
+.bd tr.row.sel{border-left-color:var(--amber);background:rgba(255,174,26,.07)}
+.bd tr.row.sel td{background:rgba(255,174,26,.07)}
+.bd tr.row.sel .sym{color:var(--amber)}
+.sym{font-weight:600;font-size:12px}
+.bd .note td{padding:0 8px 6px;text-align:left;font-size:10px;letter-spacing:0;white-space:normal;line-height:1.4}
+.bd tr.off{color:var(--dim)} .bd tr.off .sym{color:var(--dim)}
+.bd .sep td{
+  padding:7px 8px 4px;font-size:9.5px;letter-spacing:.1em;text-transform:uppercase;
+  color:var(--faint);text-align:left;border-top:1px solid var(--line2);background:var(--panel2);
+}
+
+/* ---------- ticket ---------- */
+.seg{display:flex;gap:2px;padding:9px 11px 0}
+.seg button{
+  flex:1;padding:6px;border:1px solid var(--line);background:var(--panel2);color:var(--mut);
+  font-family:var(--mono);font-size:11px;font-weight:600;letter-spacing:.09em;border-radius:5px;
+}
+.seg button.on{background:var(--raise);color:var(--ink);border-color:#2B3647}
+.seg button.on.sell{color:var(--coral);border-color:rgba(255,107,94,.4)}
+.seg button.on.buy{color:var(--teal);border-color:rgba(53,214,164,.4)}
+
+.fld{padding:10px 11px;border-bottom:1px solid var(--line2)}
+.fld .k{font-family:var(--mono);font-size:9.5px;letter-spacing:.11em;text-transform:uppercase;color:var(--dim);margin-bottom:5px}
+.fr{display:flex;align-items:center;gap:9px}
+.fr .v{font-family:var(--mono);font-size:23px;font-weight:600;letter-spacing:-.035em;flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis}
+.tk{display:flex;align-items:center;gap:6px;background:var(--raise);border:1px solid var(--line);border-radius:6px;padding:4px 8px;font-weight:600;font-size:12px;white-space:nowrap;flex:none}
+.tk i{width:16px;height:16px;border-radius:50%;display:grid;place-items:center;font-size:8px;font-weight:700;font-style:normal;color:#06090F;flex:none}
+.sub{font-family:var(--mono);font-size:10px;color:var(--dim);margin-top:5px}
+
+.lg{padding:9px 11px}
+.lr{display:flex;justify-content:space-between;gap:10px;padding:3.5px 0;font-size:11.5px;color:var(--mut)}
+.lr>span:last-child{font-family:var(--mono);color:var(--ink);text-align:right;white-space:nowrap}
+.lr.tot{margin-top:6px;padding-top:8px;border-top:1px solid var(--line);color:var(--ink);font-weight:600}
+.lr.tot>span:last-child{font-size:15px;font-weight:600}
+.lr .hint{color:var(--dim);font-size:10px}
+
+.go{
+  display:block;width:calc(100% - 22px);margin:3px 11px 8px;padding:11px;border-radius:6px;
+  background:var(--amber);color:#180F00;font-weight:700;font-size:13.5px;letter-spacing:-.01em;
+}
+.go.dead{background:var(--panel2);color:var(--dim);border:1px solid var(--line);cursor:not-allowed;font-weight:600}
+.gon{font-family:var(--mono);font-size:10px;color:var(--dim);text-align:center;padding:0 11px 11px}
+
+/* refusal block — lives inside the ticket, not in a dialog */
+.stop{margin:0 11px 10px;border:1px solid rgba(255,107,94,.34);border-radius:6px;background:linear-gradient(180deg,rgba(255,107,94,.09),rgba(255,107,94,.02))}
+.stop .hd{display:flex;align-items:center;gap:7px;padding:8px 10px;border-bottom:1px solid rgba(255,107,94,.2)}
+.stop .hd .t{font-family:var(--mono);font-size:10.5px;font-weight:600;letter-spacing:.08em;text-transform:uppercase;color:var(--coral)}
+.stop .say{padding:9px 10px;font-size:12.5px;line-height:1.5}
+.stop .say b{color:var(--coral);font-family:var(--mono);font-weight:600}
+.stop .math{padding:0 10px 9px}
+.mr{display:flex;justify-content:space-between;gap:10px;padding:3px 0;font-size:11px;color:var(--mut);font-family:var(--mono)}
+.mr>span:last-child{color:var(--ink)}
+.mr.f>span:last-child{color:var(--coral)}
+.mr.top{border-top:1px dashed rgba(255,107,94,.25);margin-top:5px;padding-top:6px}
+.acts{border-top:1px solid rgba(255,107,94,.2)}
+.act{
+  display:flex;align-items:baseline;gap:8px;width:100%;text-align:left;padding:8px 10px;
+  border-bottom:1px solid rgba(255,107,94,.12);font-size:12px;
+}
+.act:last-child{border-bottom:0}
+.act:hover{background:rgba(255,255,255,.03)}
+.act .n{font-family:var(--mono);font-size:10px;color:var(--faint);flex:none;width:12px}
+.act .w{flex:1;min-width:0}
+.act .w em{display:block;font-style:normal;font-size:10.5px;color:var(--dim);margin-top:2px;line-height:1.4}
+.act.prime .w strong{color:var(--teal)}
+.act.cold .w strong{color:var(--mut)}
+
+/* not-offered block */
+.absent{margin:0 11px 11px;border:1px solid var(--line);border-radius:6px;background:var(--panel2)}
+.absent .hd{padding:8px 10px;border-bottom:1px solid var(--line);font-family:var(--mono);font-size:10.5px;letter-spacing:.08em;text-transform:uppercase;color:var(--mut)}
+.absent p{padding:9px 10px;font-size:12.5px;line-height:1.55;color:var(--ink)}
+.absent p+p{padding-top:0;color:var(--mut)}
+.absent code{font-family:var(--mono);font-size:11.5px;color:var(--amber)}
+
+/* ---------- blotter ---------- */
+.bl{width:100%;border-collapse:collapse}
+.bl th{
+  font-family:var(--mono);font-size:9.5px;letter-spacing:.1em;text-transform:uppercase;color:var(--faint);
+  font-weight:500;padding:6px 11px;text-align:right;border-bottom:1px solid var(--line2);white-space:nowrap;
+}
+.bl th:first-child,.bl th:nth-child(2){text-align:left}
+.bl td{padding:8px 11px;text-align:right;font-family:var(--mono);font-size:11.5px;white-space:nowrap;border-bottom:1px solid var(--line2);vertical-align:top}
+.bl td:first-child,.bl td:nth-child(2){text-align:left}
+.bl tr:last-child td{border-bottom:0}
+.bl .st{font-size:10px;font-weight:600;letter-spacing:.08em;text-transform:uppercase}
+.bl .why{font-family:var(--mono);font-size:10px;color:var(--dim);margin-top:4px;white-space:normal;line-height:1.5;max-width:52ch}
+.bl .why b{color:var(--coral);font-weight:500}
+.bl .why .ok{color:var(--teal)}
+.bl .rv{
+  display:inline-block;margin-top:5px;padding:3px 6px;border-radius:4px;background:#0A0507;
+  border:1px solid rgba(255,107,94,.24);color:var(--coral);font-size:10px;white-space:normal;word-break:break-word;
+}
+.prog{display:flex;gap:2px;margin-top:5px}
+.prog i{height:3px;flex:1;border-radius:2px;background:var(--line);font-style:normal}
+.prog i.on{background:var(--teal)} .prog i.now{background:var(--amber)} .prog i.bad{background:var(--coral)}
+
+/* ---------- receipt ---------- */
+.rcp{display:flex;align-items:baseline;gap:12px;flex-wrap:wrap;padding:11px;border-bottom:1px solid var(--line2)}
+.rcp .big{font-family:var(--mono);font-size:27px;font-weight:600;letter-spacing:-.04em;color:var(--amber)}
+.rcp .big em{font-style:normal;font-size:14px;color:var(--mut);margin-left:6px}
+.rcp .col{display:flex;flex-direction:column;gap:2px}
+.rcp .kk{font-family:var(--mono);font-size:9.5px;letter-spacing:.1em;text-transform:uppercase;color:var(--dim)}
+.rcp .vv{font-family:var(--mono);font-size:13px}
+.rcp .spacer{flex:1}
+
+.win{
+  margin:11px;padding:9px 11px;border:1px solid rgba(255,174,26,.28);border-radius:6px;
+  background:linear-gradient(90deg,rgba(255,174,26,.10),rgba(255,174,26,.02));font-size:12.5px;line-height:1.55;
+}
+.win b{font-family:var(--mono);color:var(--amber);font-weight:600}
+
+.cmp{width:100%;border-collapse:collapse}
+.cmp th{
+  font-family:var(--mono);font-size:9.5px;letter-spacing:.1em;text-transform:uppercase;color:var(--faint);
+  font-weight:500;padding:7px 11px;text-align:right;border-bottom:1px solid var(--line2);white-space:nowrap;
+}
+.cmp th:first-child{text-align:left}
+.cmp td{padding:9px 11px;text-align:right;border-bottom:1px solid var(--line2);white-space:nowrap;font-family:var(--mono);font-size:12px}
+.cmp td:first-child{text-align:left;font-family:var(--sans)}
+.cmp tr:last-child td{border-bottom:0}
+.cmp .rn{font-weight:600;font-size:12.5px}
+.cmp .rm{font-size:10.5px;color:var(--dim);margin-top:1px}
+.cmp .nt{font-size:14px;font-weight:600}
+.cmp tr.me td{background:rgba(255,174,26,.07)}
+.cmp tr.me td:first-child{box-shadow:inset 2px 0 0 var(--amber)}
+.cmp tr.me .rn,.cmp tr.me .nt{color:var(--amber)}
+.cmp tr.me .nt{font-size:18px}
+.bst{font-family:var(--mono);font-size:9px;letter-spacing:.09em;color:#180F00;background:var(--amber);border-radius:3px;padding:1px 5px;margin-left:6px;vertical-align:2px}
+
+.two{display:grid;grid-template-columns:minmax(0,1.32fr) minmax(0,1fr);gap:12px;margin-top:12px}
+@media(max-width:1100px){ .two{grid-template-columns:minmax(0,1fr)} }
+
+.rib{display:flex;height:22px;margin:11px 11px 0;border-radius:4px;overflow:hidden;gap:2px}
+.rib i{display:grid;place-items:center;font-family:var(--mono);font-size:9.5px;font-weight:600;color:#06090F;font-style:normal}
+.c1{background:var(--violet)} .c2{background:var(--blue)} .c3{background:var(--cyan)} .c4{background:var(--amber)}
+.sw{width:8px;height:8px;border-radius:2px;flex:none;display:inline-block}
+
+.lgs{width:100%;border-collapse:collapse;margin-top:8px}
+.lgs th{font-family:var(--mono);font-size:9.5px;letter-spacing:.06em;text-transform:uppercase;color:var(--faint);font-weight:500;padding:6px 9px;text-align:right}
+.lgs th:first-child{text-align:left}
+.lgs td{padding:6.5px 9px;border-top:1px solid var(--line2);text-align:right;font-family:var(--mono);font-size:11px;white-space:nowrap}
+.lgs td:first-child{text-align:left}
+.vnm{display:flex;align-items:center;gap:7px;font-size:11.5px}
+.vnm em{font-style:normal;color:var(--dim);font-size:10px}
+
+.orc{padding:11px}
+.oh{display:flex;align-items:baseline;gap:9px;flex-wrap:wrap}
+.oh b{font-family:var(--mono);font-size:29px;font-weight:600;letter-spacing:-.04em;color:var(--teal)}
+.oh .pass{font-family:var(--mono);font-size:10px;font-weight:600;letter-spacing:.1em;color:#04160F;background:var(--teal);border-radius:3px;padding:2px 7px}
+.oline{font-size:11.5px;color:var(--mut);margin-top:4px;line-height:1.5}
+.gau{position:relative;height:36px;margin:16px 0 4px}
+.gtr{position:absolute;top:14px;left:0;right:0;height:6px;border-radius:3px;background:linear-gradient(90deg,rgba(255,107,94,.4),rgba(53,214,164,.3) 18%,rgba(53,214,164,.3) 82%,rgba(255,107,94,.4))}
+.gz{position:absolute;top:9px;left:50%;width:1px;height:16px;background:var(--faint)}
+.gm{position:absolute;top:7px;width:3px;height:20px;border-radius:2px;background:var(--teal);box-shadow:0 0 0 4px rgba(53,214,164,.16)}
+.gl{position:absolute;top:27px;font-family:var(--mono);font-size:9.5px;color:var(--faint)}
+.om{border-top:1px solid var(--line2);margin-top:10px;padding-top:9px}
+.or{display:flex;justify-content:space-between;gap:10px;padding:3px 0;font-size:11.5px;color:var(--mut)}
+.or>span:last-child{font-family:var(--mono);color:var(--ink);text-align:right}
+
+/* ---------- footer status line ---------- */
+.sl{
+  display:flex;flex-wrap:wrap;gap:6px 18px;padding:10px 16px 26px;margin-top:12px;
+  border-top:1px solid var(--line);font-family:var(--mono);font-size:10px;color:var(--faint);
+}
+.sl b{color:var(--dim);font-weight:400}
+
+/* ---------- phone ---------- */
+@media(max-width:700px){
+  .bar{gap:9px;padding:8px 10px}
+  .sess{flex:1 1 100%;order:9}
+  .cmp thead,.bl thead,.lgs thead{display:none}
+  .cmp tbody tr,.bl tbody tr,.lgs tbody tr{display:block;padding:9px 11px;border-bottom:1px solid var(--line2)}
+  .cmp td,.bl td,.lgs td{
+    display:flex;align-items:baseline;justify-content:space-between;gap:12px;
+    border:0;padding:2.5px 0;text-align:right;
+  }
+  .cmp td::before,.bl td::before,.lgs td::before{
+    content:attr(data-l);font-family:var(--sans);font-size:9.5px;letter-spacing:.08em;
+    text-transform:uppercase;color:var(--faint);flex:none;
+  }
+  .cmp td:first-child,.bl td:first-child,.bl td:nth-child(2),.lgs td:first-child{
+    display:block;text-align:left;white-space:normal;margin-bottom:5px;
+  }
+  .cmp td:first-child::before,.bl td:first-child::before,.bl td:nth-child(2)::before,.lgs td:first-child::before{content:none}
+  .cmp tr.me{box-shadow:inset 2px 0 0 var(--amber);background:rgba(255,174,26,.07)}
+  .cmp tr.me td{background:none}
+  .cmp tr.me td:first-child{box-shadow:none}
+  .bl .why,.bl .rv,.prog{max-width:none}
+  .rcp .big{font-size:23px}
+}
+</style>
+</head>
+<body>
+
+<!-- ============================ CHROME ============================ -->
+<div class="bar">
+  <div class="logo">partit<b>i</b>o</div>
+  <div class="tag">desk</div>
+  <div class="tag">Robinhood Chain · 4663</div>
+
+  <div class="sess">
+    <div class="sesbar"><div class="rth" id="rthBand"></div><div class="now" id="nowMark"></div></div>
+    <div class="txt" id="sessTxt">—</div>
+  </div>
+
+  <div class="gap"></div>
+  <div class="pill mute" id="feedPill">feeds —</div>
+  <div class="pill ok"><i class="dot"></i> relayer 12ms</div>
+  <div class="tag">no wallet · quotes are live</div>
+</div>
+
+<div class="desk">
+
+  <!-- ==================== 1. THE BOARD ==================== -->
+  <div>
+    <div class="p">
+      <div class="ph">Board <span class="r" id="boardMeta">—</span></div>
+      <table class="bd">
+        <thead>
+          <tr><th>Sym</th><th>Last</th><th>Chg</th><th>V</th><th>Ref</th></tr>
+        </thead>
+        <tbody id="board"></tbody>
+      </table>
+    </div>
+
+    <div class="p">
+      <div class="ph">Guard constants <span class="r">on-chain</span></div>
+      <div class="lg">
+        <div class="lr"><span>Band floor</span><span>50 bps</span></div>
+        <div class="lr"><span>Band ceiling</span><span>2000 bps</span></div>
+        <div class="lr"><span>Dead-feed ceiling</span><span>120 h</span></div>
+        <div class="lr"><span>Feed-ahead tolerance</span><span>5 min</span></div>
+        <div class="lr"><span>Max relayer fee</span><span>50 bps</span></div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ==================== 2. THE TICKET ==================== -->
+  <div>
+    <div class="p">
+      <div class="ph">Ticket <span class="r" id="tkMeta">EIP-712</span></div>
+      <div class="seg">
+        <button id="bBuy" onclick="setSide('buy')">BUY</button>
+        <button id="bSell" onclick="setSide('sell')">SELL</button>
+      </div>
+      <div id="ticket"></div>
+    </div>
+  </div>
+
+  <!-- ==================== 3. THE EVIDENCE ==================== -->
+  <div class="ev">
+
+    <!-- working orders: the gap between signed and filled -->
+    <div class="p">
+      <div class="ph">Working orders <span class="r"><i class="dot"></i> 4 signed · 1 held · relayer pays every attempt</span></div>
+      <table class="bl">
+        <thead>
+          <tr><th>Order</th><th>Instruction</th><th>State</th><th>Signed</th><th>Deadline</th><th>Out</th></tr>
+        </thead>
+        <tbody id="blotter"></tbody>
+      </table>
+    </div>
+
+    <!-- receipt -->
+    <div class="p">
+      <div class="ph">Receipt · <span class="m">0x7f3a…c21b</span>
+        <span class="r">block 71,341,204 · 1 signature · 1 transaction</span>
+      </div>
+
+      <div class="rcp">
+        <div class="col">
+          <div class="kk">Net received</div>
+          <div class="big">29.7672<em>AAPL</em></div>
+        </div>
+        <div class="col"><div class="kk">Paid</div><div class="vv">10,000.00 USDG</div></div>
+        <div class="col"><div class="kk">All-in / share</div><div class="vv">335.94</div></div>
+        <div class="col"><div class="kk">Chainlink mark</div><div class="vv">336.04</div></div>
+        <div class="col"><div class="kk">Network gas</div><div class="vv pos">$0.00</div></div>
+        <div class="spacer"></div>
+        <div class="col"><div class="kk">Filled</div><div class="vv" id="fillAge">—</div></div>
+      </div>
+
+      <div class="win">
+        The split beat the best single pool by <b>0.0458 AAPL</b> = <b>$15.39</b>. The relayer fee
+        was <b>1.83 USDG</b>. <b>Routing paid for the fee 8.4×</b> — and because the pools sit under
+        the mark, 10,000.00 USDG bought <b>$10,002.97</b> of AAPL at Chainlink's price.
+      </div>
+
+      <table class="cmp">
+        <thead>
+          <tr><th>Route, priced on the identical order</th><th>Venues</th><th>Net received</th><th>Δ AAPL</th><th>Δ bps</th><th>Δ USD</th></tr>
+        </thead>
+        <tbody>
+          <tr class="me">
+            <td><div class="rn">partitio <span class="bst">FILLED</span></div><div class="rm">4-venue split · one atomic settle · oracle floor on the aggregate</div></td>
+            <td data-l="Venues">4</td>
+            <td data-l="Net received"><span class="nt">29.7672</span></td>
+            <td data-l="Δ AAPL" style="color:var(--dim)">—</td>
+            <td data-l="Δ bps" style="color:var(--dim)">—</td>
+            <td data-l="Δ USD" style="color:var(--dim)">—</td>
+          </tr>
+          <tr>
+            <td><div class="rn">KyberSwap</div><div class="rm">external aggregator · quoted in the same call</div></td>
+            <td data-l="Venues">3</td>
+            <td data-l="Net received"><span class="nt">29.7410</span></td>
+            <td data-l="Δ AAPL" class="neg">−0.0262</td>
+            <td data-l="Δ bps" class="neg">−8.8</td>
+            <td data-l="Δ USD" class="neg">−$8.80</td>
+          </tr>
+          <tr>
+            <td><div class="rn">Uniswap v4 · USDG 0.30%</div><div class="rm">deepest single venue · no split</div></td>
+            <td data-l="Venues">1</td>
+            <td data-l="Net received"><span class="nt">29.7214</span></td>
+            <td data-l="Δ AAPL" class="neg">−0.0458</td>
+            <td data-l="Δ bps" class="neg">−15.4</td>
+            <td data-l="Δ USD" class="neg">−$15.39</td>
+          </tr>
+          <tr>
+            <td><div class="rn">LI.FI</div><div class="rm">external aggregator · leg rejected mid-transaction, fell back to partitio</div></td>
+            <td data-l="Venues">2</td>
+            <td data-l="Net received"><span class="nt">29.7089</span></td>
+            <td data-l="Δ AAPL" class="neg">−0.0583</td>
+            <td data-l="Δ bps" class="neg">−19.6</td>
+            <td data-l="Δ USD" class="neg">−$19.59</td>
+          </tr>
+        </tbody>
+      </table>
+
+      <div class="two" style="margin:12px">
+        <div class="p" style="margin:0">
+          <div class="ph">Split as executed <span class="r">9,998.17 USDG · 4 legs · USDG-quoted pools + 1 maker</span></div>
+          <div class="rib">
+            <i class="c1" style="width:42%">42%</i><i class="c2" style="width:31%">31%</i>
+            <i class="c3" style="width:18%">18%</i><i class="c4" style="width:9%">9%</i>
+          </div>
+          <table class="lgs">
+            <thead><tr><th>Venue</th><th>USDG</th><th>AAPL</th><th>Fill</th><th>Δ mark</th></tr></thead>
+            <tbody>
+              <tr><td><span class="vnm"><i class="sw c1"></i> Rialto <em>MM-02</em></span></td>
+                  <td data-l="USDG in">4,199.23</td><td data-l="AAPL out">12.5085</td><td data-l="Fill">335.71</td><td data-l="vs mark" class="pos">−9.8 bps</td></tr>
+              <tr><td><span class="vnm"><i class="sw c2"></i> Uni v4 <em>0.30%</em></span></td>
+                  <td data-l="USDG in">3,099.43</td><td data-l="AAPL out">9.2278</td><td data-l="Fill">335.88</td><td data-l="vs mark" class="pos">−4.8 bps</td></tr>
+              <tr><td><span class="vnm"><i class="sw c3"></i> Uni v3 <em>0.05%</em></span></td>
+                  <td data-l="USDG in">1,799.66</td><td data-l="AAPL out">5.3547</td><td data-l="Fill">336.09</td><td data-l="vs mark" class="neg">+1.5 bps</td></tr>
+              <tr><td><span class="vnm"><i class="sw c4"></i> Uni v3 <em>0.30%</em></span></td>
+                  <td data-l="USDG in">899.85</td><td data-l="AAPL out">2.6762</td><td data-l="Fill">336.24</td><td data-l="vs mark" class="neg">+6.0 bps</td></tr>
+            </tbody>
+          </table>
+          <div class="lg" style="border-top:1px solid var(--line2);margin-top:6px">
+            <div class="lr"><span>Cheapest leg carried the size cap</span><span>300 units</span></div>
+            <div class="lr"><span>Remaining 3 venues on AAPL</span><span>not improving</span></div>
+            <div class="lr"><span>Size-weight the four Δs yourself</span><span class="pos">−4.8 bps</span></div>
+          </div>
+        </div>
+
+        <div class="p" style="margin:0">
+          <div class="ph">Oracle floor <span class="r">enforced on the aggregate</span></div>
+          <div class="orc">
+            <div class="oh"><b>−4.8 bps</b><span class="pass">CLEARED</span></div>
+            <div class="oline">Size-weighted fill 335.88 against a Chainlink mark of 336.04 —
+              on this chain the pools sit <em>under</em> the mark. Green here means under the mark:
+              in a buyer's favour, and the exact thing that floors a seller.</div>
+
+            <div class="gau">
+              <div class="gtr"></div><div class="gz"></div>
+              <div class="gm" style="left:47.2%"></div>
+              <div class="gl" style="left:0">−85 floor</div>
+              <div class="gl" style="left:50%;transform:translateX(-50%)">mark</div>
+              <div class="gl" style="right:0">+85</div>
+            </div>
+
+            <div class="om">
+              <div class="or"><span>Chainlink AAPL/USD</span><span>336.04</span></div>
+              <div class="or"><span>Reference age at fill</span><span id="oAge">—</span></div>
+              <div class="or"><span>Signer's max feed age</span><span>6h 00m</span></div>
+              <div class="or"><span>Band signed</span><span>±85 bps</span></div>
+              <div class="or"><span>Band composition</span><span>50 dev + 30 fee + 5 slip</span></div>
+              <div class="or"><span>Floor on output</span><span>29.5000 AAPL</span></div>
+              <div class="or"><span>Headroom above floor</span><span class="pos">+0.2672 AAPL</span></div>
+              <div class="or"><span>Aggregator leg rejected</span><span>LI.FI · same tx · no extra gas</span></div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+    </div>
+  </div>
+</div>
+
+<div class="sl">
+  <span><b>RTH</b> 13:30–20:00 UTC, Mon–Fri</span>
+  <span><b>band floor</b> 50 bps = measured feed deviation trigger</span>
+  <span><b>dead-feed ceiling</b> 120 h vs 87.4 h observed max</span>
+  <span><b>venues</b> 233 mapped · 120 with active liquidity</span>
+  <span><b>tickers</b> 37 listed · 28 splittable · 2 withheld</span>
+  <span><b>split</b> computed off-chain, enforced on-chain by venue proofs + minOut + oracle floor</span>
+</div>
+
+<script>
+/* ===========================================================================
+   Data. Every ticket below is COMPUTED from these rows, so a refusal is the
+   arithmetic refusing — not a hardcoded error screen.
+   poolDev = where the on-chain mid sits against the Chainlink mark, in bps.
+   =========================================================================== */
+const FLOOR_BPS = 50, CEIL_BPS = 2000, FEE = 1.83;
+
+const T = [
+  {s:'AAPL', n:'Apple',            px:336.04, chg:+0.62, v:7,  ref:41*60,     dev:-4.8,    band:85,  cap:300,  legs:[['Rialto MM-02',42],['Uni v4 0.30%',31],['Uni v3 0.05%',18],['Uni v3 0.30%',9]]},
+  {s:'NVDA', n:'NVIDIA',           px:191.27, chg:+1.84, v:10, ref:6*60,      dev:-1.1,    band:80,  cap:1000, legs:[['Uni v3 0.05%',38],['Rialto MM-07',27],['Uni v4 0.05%',21],['Uni v3 0.30%',14]]},
+  {s:'TSLA', n:'Tesla',            px:421.36, chg:-0.93, v:6,  ref:12*60,     dev:-7.6,    band:85,  cap:1000, legs:[['Uni v4 0.30%',40],['Rialto MM-03',30],['Uni v3 0.05%',19],['Uni v3 0.30%',11]]},
+  {s:'AMZN', n:'Amazon',           px:248.90, chg:+0.31, v:4,  ref:68*60,     dev:-15.4,   band:95,  cap:1000, legs:[['Rialto MM-01',46],['Uni v4 0.30%',33],['Uni v3 0.30%',21]]},
+  {s:'SPY',  n:'S&P 500 ETF',      px:684.20, chg:+0.18, v:5,  ref:6*3600+12*60, dev:-1.7, band:85,  cap:300,  legs:[['Uni v3 0.05%',44],['Rialto MM-05',29],['Uni v4 0.30%',27]]},
+  {s:'SGOV', n:'0–3M T-Bill ETF',  px:101.14, chg:+0.01, v:4,  ref:3*3600+47*60, dev:-2.9, band:75,  cap:1000, legs:[['Uni v3 0.05%',52],['Rialto MM-04',31],['Uni v3 0.30%',17]]},
+  {s:'META', n:'Meta',             px:742.15, chg:+0.44, v:5,  ref:28*60,     dev:-11.0,   band:90,  cap:300,  legs:[['Uni v3 0.30%',41],['Rialto MM-02',32],['Uni v4 0.30%',27]]},
+  {s:'MSFT', n:'Microsoft',        px:518.63, chg:+0.27, v:4,  ref:52*60,     dev:-6.5,    band:85,  cap:0,    legs:[['Uni v4 0.30%',45],['Uni v3 0.30%',33],['Uni v4 1.00%',22]]},
+  {s:'GOOGL',n:'Alphabet',         px:247.80, chg:-0.11, v:7,  ref:4*3600+6*60, dev:-1169.5, band:90,  cap:300,  legs:[['Uni v3 0.30%',48],['Rialto MM-02',31],['Uni v4 0.30%',21]]},
+  {s:'COIN', n:'Coinbase',         px:358.44, chg:+2.91, v:3,  ref:22*60,     dev:-261.9,    band:95,  cap:1000, legs:[['Uni v4 1.00%',58],['Rialto MM-06',42]]},
+];
+const WITHHELD = [
+  {s:'GLD',  n:'Gold ETF',  v:7, why:'reference is a Uniswap v3 pool price'},
+  {s:'RDDT', n:'Reddit',    v:5, why:'reference is a Uniswap v3 pool price'},
+];
+
+let st = {sym:'AAPL', side:'buy', amt:10000, band:{}};
+const F = (n,d=2)=>n.toLocaleString('en-US',{minimumFractionDigits:d,maximumFractionDigits:d});
+const bps = n => (n>=0?'+':'−')+Math.abs(n).toFixed(1)+' bps';
+const pct = n => (n>=0?'+':'−')+Math.abs(n).toFixed(2)+'%';
+function age(sec, fine){
+  sec=Math.max(0,Math.round(sec));
+  const h=Math.floor(sec/3600), m=Math.floor(sec%3600/60), s=sec%60;
+  if(h) return h+'h '+String(m).padStart(2,'0')+'m';
+  if(m) return fine ? m+'m '+String(s).padStart(2,'0')+'s' : m+'m';
+  return s+'s';
+}
+const find = s => T.find(t=>t.s===s) || WITHHELD.find(t=>t.s===s);
+
+/* ---------------- market session, computed from the real clock ------------- */
+const OPEN_M = 13*60+30, CLOSE_M = 20*60;
+function session(){
+  const d=new Date(), dow=d.getUTCDay();
+  const mins=d.getUTCHours()*60+d.getUTCMinutes()+d.getUTCSeconds()/60;
+  const weekday = dow>=1 && dow<=5;
+  const open = weekday && mins>=OPEN_M && mins<CLOSE_M;
+  let until;
+  if(open){ until=(CLOSE_M-mins)*60; }
+  else{
+    const x=new Date(d); x.setUTCHours(13,30,0,0);
+    if(x<=d) x.setUTCDate(x.getUTCDate()+1);
+    while(x.getUTCDay()===0||x.getUTCDay()===6) x.setUTCDate(x.getUTCDate()+1);
+    until=(x-d)/1000;
+  }
+  return {open, until, dayPct:mins/1440};
+}
+
+/* ---------------- the board ---------------- */
+function renderBoard(){
+  let h='';
+  for(const t of T){
+    const sellDev = t.dev;                      // sell output sits this far under the mark
+    const floored = sellDev < -t.band;
+    h += '<tr class="row'+(st.sym===t.s?' sel':'')+'" onclick="pick(\''+t.s+'\')">'
+       +   '<td><span class="sym">'+t.s+'</span></td>'
+       +   '<td>'+F(t.px)+'</td>'
+       +   '<td class="'+(t.chg>=0?'pos':'neg')+'">'+pct(t.chg)+'</td>'
+       +   '<td>'+t.v+'</td>'
+       +   '<td style="color:'+(t.ref>3*3600?'var(--amber)':'var(--dim)')+'">'+age(t.ref)+'</td>'
+       + '</tr>';
+    if(floored){
+      h += '<tr class="note" onclick="pick(\''+t.s+'\')" style="cursor:pointer"><td colspan="5" class="m neg">'
+         + '▸ sells floored — book '+(Math.abs(sellDev)/100).toFixed(2)+'% under mark</td></tr>';
+    }
+  }
+  h += '<tr class="sep"><td colspan="5">Withheld in v1 — 2 of 37</td></tr>';
+  for(const w of WITHHELD){
+    h += '<tr class="row off'+(st.sym===w.s?' sel':'')+'" onclick="pick(\''+w.s+'\')">'
+       +   '<td><span class="sym">'+w.s+'</span></td>'
+       +   '<td colspan="3" style="text-align:left;font-size:10.5px;letter-spacing:.02em">no guardable price</td>'
+       +   '<td>'+w.v+' v</td></tr>';
+  }
+  document.getElementById('board').innerHTML=h;
+  const nFloor = T.filter(t=>t.dev < -t.band).length;
+  document.getElementById('boardMeta').innerHTML =
+    T.length+' tradable · <span class="neg">'+nFloor+' sell-floored</span> · '+WITHHELD.length+' withheld';
+}
+
+/* ---------------- the ticket ---------------- */
+function pick(s){ st.sym=s; renderBoard(); renderTicket(); }
+function setSide(x){ st.side=x; renderTicket(); }
+function widen(sym,b){ st.band[sym]=b; renderTicket(); renderBoard(); }
+function resetBand(){ delete st.band[st.sym]; renderTicket(); renderBoard(); }
+function holdOrder(sym){
+  if(ORDERS.some(o=>o.ins.indexOf(sym)>-1 && o.st==='HELD')) return;
+  ORDERS.unshift({h:'0x9d47…b1c0', ins:'40.0000 '+sym+' → USDG', st:'HELD', cls:'pill bad', signed:0, dl:300,
+    prog:[1,1,-1], out:'—',
+    why:'Signed and held. It has not been attempted yet — the relayer will not burn gas on a fill it can already see will revert. It goes out the first block the book is back inside the band.',
+    rv:'held: pre-flight says BelowOracleFloor — not broadcast, no gas burned'});
+  renderBlotter();
+}
+
+function quote(t, side, amt, band){
+  // BUY: amt USDG in. SELL: amt shares in.
+  const k = 1 + t.dev/1e4;                      // executed price / Chainlink mark
+  band = band || t.band;
+  if(side==='buy'){
+    const toMkt = amt - FEE;
+    const fill  = t.px * k;
+    const out   = toMkt / fill;
+    const refOut= toMkt / t.px;                 // oracle's view of that input
+    const floor = refOut * (1 - band/1e4);
+    return {toMkt, fill, out, refOut, floor, band, ok: out>=floor, feeSide:'input'};
+  }
+  const gross  = amt * t.px * k;                // USDG the venues hand back
+  const out    = gross - FEE;                   // sell fee comes out of the output
+  const refOut = amt * t.px;
+  const floor  = refOut * (1 - band/1e4);
+  return {toMkt:amt, fill:t.px*k, out, gross, refOut, floor, band, ok: gross>=floor, feeSide:'output'};
+}
+
+function renderTicket(){
+  const t = find(st.sym);
+  const isBuy = st.side==='buy';
+  document.getElementById('bBuy').className  = isBuy?'on buy':'';
+  document.getElementById('bSell').className = isBuy?'':'on sell';
+  const host = document.getElementById('ticket');
+
+  /* ---- withheld ticker: no ticket at all, and say exactly why ---- */
+  if(!t.px){
+    document.getElementById('tkMeta').textContent = 'withheld';
+    host.innerHTML =
+      '<div class="absent">'
+      + '<div class="hd">'+t.s+' — not listed</div>'
+      + '<p>Every trade here is floored by a price partitio did not produce. '+t.s+' on chain 4663 '
+      + 'is priced by a <code>Uniswap V3 Pool Price in USD</code> feed — and that is the same pool '
+      + 'your order would move. A floor computed from the thing it is guarding is not a floor.</p>'
+      + '<p>'+t.v+' venues are routable and the liquidity is real. What is missing is an independent '
+      + 'reference. '+t.s+' lists the day a Chainlink '+t.s+'/USD feed exists on 4663 — nothing else has to change.</p>'
+      + '</div>'
+      + '<div class="gon" style="padding-bottom:12px">2 of 37 tickers are withheld for this reason · the other 35 trade</div>';
+    return;
+  }
+
+  const BAND = st.band[t.s] || t.band;
+  const q = quote(t, st.side, isBuy? st.amt : 40, BAND);
+  const widened = BAND !== t.band;
+  const inAmt  = isBuy ? st.amt : 40;
+  const inSym  = isBuy ? 'USDG' : t.s;
+  const outSym = isBuy ? t.s : 'USDG';
+  const outVal = isBuy ? q.out.toFixed(4) : F(Math.max(0,q.out));
+  const sess = session();
+  document.getElementById('tkMeta').textContent = t.s+' · '+t.v+' venues · band ±'+BAND+' bps'+(widened?' (widened)':'');
+
+  let h = '';
+  h += '<div class="fld"><div class="k">You '+(isBuy?'pay':'sell')+'</div><div class="fr">'
+     +   '<div class="v">'+(isBuy?F(inAmt):F(inAmt,4))+'</div>'
+     +   '<div class="tk"><i style="background:'+(isBuy?'linear-gradient(135deg,#7CE7C4,#1FB489)':'linear-gradient(135deg,#FFD79A,#FF9B20)')+'">'+inSym[0]+'</i>'+inSym+'</div>'
+     + '</div><div class="sub">'+(isBuy?'6 decimals · signed as amountIn':'18 decimals · Rialto takes '+(t.cap?('≤'+t.cap+' units'):'no size'))+'</div></div>';
+
+  h += '<div class="fld"><div class="k">You receive</div><div class="fr">'
+     +   '<div class="v" style="color:'+(q.ok?'var(--amber)':'var(--dim)')+'">'+(q.ok?outVal:'—')+'</div>'
+     +   '<div class="tk"><i style="background:'+(isBuy?'linear-gradient(135deg,#FFD79A,#FF9B20)':'linear-gradient(135deg,#7CE7C4,#1FB489)')+'">'+outSym[0]+'</i>'+outSym+'</div>'
+     + '</div><div class="sub">'+(q.ok
+        ? 'floor '+(isBuy? q.floor.toFixed(4)+' '+outSym : F(q.floor)+' '+outSym)+' · signed as minOut'
+        : 'no fill clears the floor at any size — the book itself is dislocated')+'</div></div>';
+
+  if(q.ok){
+    h += '<div class="lg">'
+       + '<div class="lr"><span>Order size</span><span>'+(isBuy?F(inAmt)+' USDG':F(inAmt,4)+' '+t.s)+'</span></div>'
+       + '<div class="lr"><span>Network gas</span><span class="pos">$0.00</span></div>'
+       + '<div class="lr"><span>Relayer fee <span class="hint">('+(FEE/(isBuy?inAmt:inAmt*t.px)*1e4).toFixed(1)+' bps of 50 cap · off the '+q.feeSide+')</span></span><span>'+F(FEE)+' USDG</span></div>'
+       + '<div class="lr"><span>Routed to market</span><span>'+(isBuy?F(q.toMkt)+' USDG':F(inAmt,4)+' '+t.s)+'</span></div>'
+       + '<div class="lr"><span>Executed price</span><span>'+F(q.fill)+'</span></div>'
+       + '<div class="lr"><span>Chainlink mark · '+age(t.ref)+' old</span><span>'+F(t.px)+'</span></div>'
+       + '<div class="lr"><span>Band signed</span><span'+(widened?' class="neg"':'')+'>±'+BAND+' bps</span></div>'
+       + '<div class="lr"><span>Fill vs mark</span><span class="'+(t.dev<=0?'pos':'neg')+'">'+bps(t.dev)+'</span></div>'
+       + '<div class="lr tot"><span>Net received</span><span>'+outVal+' '+outSym+'</span></div>'
+       + '</div>';
+    if(widened){
+      h += '<div class="stop"><div class="hd"><i class="dot bad"></i><span class="t">You widened the floor</span></div>'
+         + '<div class="say">Your band is now <b>'+BAND+' bps</b>, not the '+t.band+' bps partitio proposed. The order clears — by '
+         + 'agreeing to sell <b>'+(Math.abs(t.dev)/100).toFixed(2)+'% under the Chainlink mark</b>, which is '
+         + '<b>'+F(q.refOut-q.gross)+' USDG</b> of value handed to whoever is on the other side. '
+         + 'This is a legal order and partitio will relay it. It is not a good one.</div>'
+         + '<div class="acts"><button class="act prime" onclick="resetBand()"><span class="n">↺</span><span class="w">'
+         + '<strong>Put the band back to ±'+t.band+' bps</strong><em>Returns the order to refused, which is where it belongs.</em></span></button></div></div>';
+    }
+    if(!sess.open){
+      h += '<div class="stop" style="border-color:rgba(255,174,26,.32);background:linear-gradient(180deg,rgba(255,174,26,.08),transparent)">'
+         + '<div class="hd" style="border-color:rgba(255,174,26,.2)"><i class="dot warn"></i><span class="t" style="color:var(--amber)">Out of hours</span></div>'
+         + '<div class="say">US regular hours are 13:30–20:00 UTC. They reopen in <b class="amb">'+age(sess.until)+'</b>. '
+         + 'The Chainlink mark keeps its last answer and the pools quote wider — the order still fills, it just fills against '
+         + 'a reference that is <b class="amb">'+age(t.ref)+'</b> old. Your signed <span class="m">maxFeedAge</span> is the control.</div></div>';
+    }
+    h += '<button class="go">Sign order — 1 signature</button>'
+       + '<div class="gon">no ETH · no approval · no gas top-up · quote reprices every 4s</div>';
+  } else {
+    /* ---------------- the refusal, in the ticket ---------------- */
+    const needBps = Math.ceil(Math.abs(t.dev));
+    const short   = q.floor - q.gross;
+    h += '<div class="stop">'
+       + '<div class="hd"><i class="dot bad"></i><span class="t">Sell will not fill</span>'
+       +   '<span class="pill bad" style="margin-left:auto">BelowOracleFloor</span></div>'
+       + '<div class="say">The best on-chain price for '+t.s+' is <b>'+(needBps/100).toFixed(2)+'% below Chainlink</b>. '
+       + 'partitio floors every sell at the mark minus your band, so this one is refused before it is signed. '
+       + 'Sizing down does not help — the book is dislocated, not thin.</div>'
+       + '<div class="math">'
+       +   '<div class="mr"><span>'+F(inAmt,4)+' '+t.s+' at the mark '+F(t.px)+'</span><span>'+F(q.refOut)+' USDG</span></div>'
+       +   '<div class="mr"><span>floor = mark − your band '+t.band+' bps</span><span>'+F(q.floor)+' USDG</span></div>'
+       +   '<div class="mr"><span>best split across '+t.legs.length+' venues</span><span>'+F(q.gross)+' USDG</span></div>'
+       +   '<div class="mr f top"><span>short of the floor by</span><span>'+F(q.floor-q.gross)+' USDG</span></div>'
+       + '</div>'
+       + '<div class="acts">'
+       +   '<button class="act prime" onclick="setSide(\'buy\')"><span class="n">1</span><span class="w"><strong>Buy '+t.s+' instead — the same dislocation, the other way round</strong>'
+       +     '<em>10,000 USDG buys '+ ((10000-FEE)/(t.px*(1+t.dev/1e4))).toFixed(4) +' '+t.s+', worth $'+F((10000-FEE)/(1+t.dev/1e4))+' at the mark. The buy side is live and clearing.</em></span></button>'
+       +   '<button class="act" onclick="holdOrder(\''+t.s+'\')"><span class="n">2</span><span class="w"><strong>Hold the sell until the floor clears</strong>'
+       +     '<em>Signs now, fills the first block the book comes back inside ±'+t.band+' bps. Costs nothing while it waits — the relayer pays for every attempt.</em></span></button>'
+       +   '<button class="act cold" onclick="widen(\''+t.s+'\','+needBps+')"><span class="n">3</span><span class="w"><strong>Widen the band to '+needBps+' bps and sign anyway</strong>'
+       +     '<em>Legal — the on-chain ceiling is '+CEIL_BPS+' bps. It means selling '+(needBps/100).toFixed(2)+'% under the mark and eating '+F(q.floor-q.gross)+' USDG. partitio will not preselect that for you.</em></span></button>'
+       + '</div></div>'
+       + '<button class="go dead" disabled>Floor not cleared — nothing to sign</button>'
+       + '<div class="gon">the floor is enforced on-chain · a relayer cannot route around it</div>';
+  }
+  host.innerHTML = h;
+}
+
+/* ---------------- working orders ---------------- */
+const NOW0 = Date.now();
+const ORDERS = [
+  {h:'0x4b91…08d7', ins:'2,500.00 USDG → SGOV', st:'SIGNED',  cls:'pill warn', signed:3,   dl:300,
+   prog:[1,0,0], why:'Signed 3s ago. The relayer has it and is building the transaction. Nothing has left your wallet yet; nothing can, except the exact <span class="m">amountIn</span> you signed.', out:'—'},
+  {h:'0xc2e6…3a44', ins:'40.0000 GOOGL → USDG', st:'HELD',    cls:'pill bad',  signed:148, dl:300,
+   prog:[1,1,-1], out:'—',
+   why:'Reverted at block 71,341,208 and again at 71,341,209. <b>Your order is still live</b> — the signature is valid until the deadline and the relayer retries every block. <span class="ok">Nothing was spent: the revert happens before any transfer, and the relayer paid the gas for both attempts.</span>',
+   rv:'BelowOracleFloor(got=8752400000, floorOut=9822790000, updatedAt=1790293188)'},
+  {h:'0x7f3a…c21b', ins:'10,000.00 USDG → AAPL', st:'FILLED', cls:'pill ok',   signed:134, dl:0,
+   prog:[1,1,1], why:'Signed at 12:38:52, filled at 12:38:58 — <span class="ok">6 seconds between your signature and settlement</span>, four venues, one transaction.', out:'29.7672 AAPL'},
+  {h:'0x1c08…9ef4', ins:'6.0000 TSLA → USDG', st:'FILLED',    cls:'pill ok',   signed:502, dl:0,
+   prog:[1,1,1], why:'Sell cleared at −8.1 bps against the mark, inside an ±85 bps band. Fee came out of the output, not the input.', out:'2,524.32 USDG'},
+];
+function renderBlotter(){
+  const el=Date.now()-NOW0;
+  let h='';
+  for(const o of ORDERS){
+    const t = o.signed + el/1000;
+    const left = o.dl ? Math.max(0, o.dl - t) : 0;
+    h += '<tr>'
+      +  '<td data-l="Order"><a href="#'+o.h+'">'+o.h+'</a></td>'
+      +  '<td data-l="Instruction">'+o.ins
+      +    '<div class="prog">'+o.prog.map(p=>'<i class="'+(p===1?'on':p===-1?'bad':'now')+'"></i>').join('')+'</div>'
+      +    '<div class="why">'+o.why+'</div>'
+      +    (o.rv?'<div class="rv">'+o.rv+'</div>':'')
+      +  '</td>'
+      +  '<td data-l="State"><span class="'+o.cls+'">'+o.st+'</span></td>'
+      +  '<td data-l="Signed">'+age(t,1)+' ago</td>'
+      +  '<td data-l="Deadline">'+(o.dl? (left>0? age(left,1)+' left':'expired') : '—')+'</td>'
+      +  '<td data-l="Out" class="'+(o.out==='—'?'':'amb')+'">'+o.out+'</td>'
+      + '</tr>';
+  }
+  document.getElementById('blotter').innerHTML=h;
+}
+
+/* ---------------- chrome ticks ---------------- */
+function renderChrome(){
+  const s=session();
+  const band=document.getElementById('rthBand');
+  band.className = 'rth'+(s.open?' on':'');
+  document.getElementById('nowMark').style.left=(s.dayPct*100).toFixed(2)+'%';
+  document.getElementById('sessTxt').innerHTML = s.open
+    ? '<b class="pos">US market open</b> <span style="color:var(--dim)">· closes in '+age(s.until)+'</span>'
+    : '<b class="amb">US market closed</b> <span style="color:var(--dim)">· opens in '+age(s.until)+'</span>';
+  const stale=T.filter(t=>t.ref>3*3600).length;
+  const fp=document.getElementById('feedPill');
+  fp.className='pill '+(stale?'warn':'ok');
+  fp.innerHTML='<i class="dot '+(stale?'warn':'')+'"></i> '+T.length+' feeds live · '+stale+' over 3h';
+  document.getElementById('fillAge').textContent = age(134+(Date.now()-NOW0)/1000,1)+' ago';
+  document.getElementById('oAge').textContent = '41m 06s · well inside 120h';
+}
+
+renderBoard(); renderTicket(); renderBlotter(); renderChrome();
+setInterval(()=>{ renderBlotter(); renderChrome(); }, 1000);
+setInterval(renderTicket, 15000);
+</script>
+</body>
+</html>

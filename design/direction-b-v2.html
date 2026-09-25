@@ -1,0 +1,676 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>partitio</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=Newsreader:ital,opsz,wght@0,6..72,400;0,6..72,500;1,6..72,400&display=swap" rel="stylesheet">
+<style>
+/* ===========================================================================
+   DIRECTION B v2 — "the number"
+   One column at every width. One card that changes state. No tables anywhere:
+   every fact is a sentence with one number in it.
+   ========================================================================= */
+:root{
+  --bg:#F5F2EC; --bg2:#EDE9E0; --card:#FFFFFF; --sunk:#FAF8F4;
+  --line:#E4DFD4; --line2:#F0ECE4;
+  --ink:#16181C; --mut:#6B7180; --dim:#9A9DA6;
+  --go:#06795A; --go-bg:#E4F2EC;
+  --no:#C0392F; --no-bg:#FBEAE7;
+  --warn:#A86400; --warn-bg:#FBF0DC;
+  --v1:#6D4AE0; --v2:#1E63C8; --v3:#0E8E97; --v4:#B37400;
+  --bar:#D9D4C8;
+  --shadow:0 1px 2px rgba(20,18,14,.05), 0 18px 40px -28px rgba(20,18,14,.45);
+  --sans:"Inter",-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif;
+  --serif:"Newsreader",Georgia,"Times New Roman",serif;
+  --mono:ui-monospace,SFMono-Regular,"SF Mono",Menlo,Consolas,monospace;
+}
+@media (prefers-color-scheme: dark){
+  :root:not([data-theme="light"]){
+    --bg:#131211; --bg2:#0D0C0B; --card:#1C1B19; --sunk:#232120;
+    --line:#302D2A; --line2:#262421;
+    --ink:#F1EEE8; --mut:#A09A91; --dim:#6E6862;
+    --go:#42C79B; --go-bg:#0E2A22;
+    --no:#FF8272; --no-bg:#2E1512;
+    --warn:#E0A63F; --warn-bg:#2C2110;
+    --v1:#9C83FF; --v2:#5B9BFF; --v3:#2FC2CC; --v4:#E0A63F;
+    --bar:#343029;
+    --shadow:0 1px 2px rgba(0,0,0,.4), 0 20px 48px -30px rgba(0,0,0,.9);
+  }
+}
+:root[data-theme="dark"]{
+  --bg:#131211; --bg2:#0D0C0B; --card:#1C1B19; --sunk:#232120;
+  --line:#302D2A; --line2:#262421;
+  --ink:#F1EEE8; --mut:#A09A91; --dim:#6E6862;
+  --go:#42C79B; --go-bg:#0E2A22;
+  --no:#FF8272; --no-bg:#2E1512;
+  --warn:#E0A63F; --warn-bg:#2C2110;
+  --v1:#9C83FF; --v2:#5B9BFF; --v3:#2FC2CC; --v4:#E0A63F;
+  --bar:#343029;
+  --shadow:0 1px 2px rgba(0,0,0,.4), 0 20px 48px -30px rgba(0,0,0,.9);
+}
+*{box-sizing:border-box;margin:0;padding:0}
+html{background:var(--bg)}
+body{
+  background:var(--bg);color:var(--ink);font-family:var(--sans);font-size:15px;line-height:1.5;
+  -webkit-font-smoothing:antialiased;
+  background-image:radial-gradient(120% 60% at 50% -10%, var(--bg2), transparent 70%);
+  background-repeat:no-repeat;
+}
+button{font:inherit;color:inherit;background:none;border:0;cursor:pointer;text-align:left}
+.n{font-variant-numeric:tabular-nums;letter-spacing:-.012em}
+.say{font-family:var(--serif);font-size:16.5px;line-height:1.52;color:var(--ink)}
+.say em{font-style:italic;color:var(--mut)}
+.say b{font-family:var(--sans);font-weight:600;font-size:15px;font-variant-numeric:tabular-nums}
+.good{color:var(--go)} .bad{color:var(--no)} .warnc{color:var(--warn)}
+
+.wrap{max-width:480px;margin:0 auto;padding:0 16px 56px}
+
+/* ---------------- header ---------------- */
+header{display:flex;align-items:center;gap:9px;padding:18px 0 12px}
+.brand{font-weight:700;font-size:18px;letter-spacing:-.035em}
+.brand b{color:var(--go)}
+.chip{
+  font-size:11.5px;color:var(--mut);background:var(--bg2);border-radius:99px;padding:3px 10px;
+  white-space:nowrap;font-variant-numeric:tabular-nums;
+}
+header .sp{flex:1}
+.tgl{width:30px;height:30px;border-radius:99px;display:grid;place-items:center;color:var(--mut);font-size:14px}
+.tgl:hover{background:var(--bg2)}
+
+/* ---------------- session sentence ---------------- */
+.sess{
+  display:flex;gap:10px;align-items:flex-start;padding:11px 14px;margin-bottom:14px;
+  border:1px solid var(--line);border-radius:13px;background:var(--card);
+}
+.sess .bulb{width:8px;height:8px;border-radius:99px;margin-top:7px;flex:none;background:var(--go)}
+.sess.shut .bulb{background:var(--warn)}
+.sess p{font-family:var(--serif);font-size:15px;line-height:1.5}
+.sess p b{font-family:var(--sans);font-weight:600;font-size:14px}
+
+/* ---------------- ticker strip ---------------- */
+.strip{display:flex;gap:7px;overflow-x:auto;padding:0 0 14px;scrollbar-width:none;-ms-overflow-style:none}
+.strip::-webkit-scrollbar{display:none}
+.tc{
+  flex:none;display:flex;flex-direction:column;gap:1px;min-width:78px;padding:8px 11px;
+  border:1px solid var(--line);border-radius:12px;background:var(--card);
+}
+.tc:hover{border-color:var(--dim)}
+.tc.on{border-color:var(--ink);box-shadow:inset 0 0 0 1px var(--ink)}
+.tc .s{font-weight:600;font-size:13px;display:flex;align-items:center;gap:5px}
+.tc .s i{width:5px;height:5px;border-radius:99px;background:var(--no);flex:none;font-style:normal}
+.tc .p{font-size:12px;color:var(--mut);font-variant-numeric:tabular-nums}
+.tc.mute{opacity:.52}
+.tc.mute .s{text-decoration:line-through;text-decoration-thickness:1px}
+
+/* ---------------- the card ---------------- */
+.card{background:var(--card);border:1px solid var(--line);border-radius:22px;box-shadow:var(--shadow);overflow:hidden}
+.sec{padding:18px 20px;border-top:1px solid var(--line2)}
+.sec:first-child{border-top:0}
+.lbl{
+  font-size:10.5px;font-weight:600;letter-spacing:.12em;text-transform:uppercase;color:var(--dim);
+  display:flex;align-items:baseline;gap:8px;margin-bottom:12px;
+}
+.lbl span{margin-left:auto;font-weight:400;letter-spacing:.01em;text-transform:none;font-size:11.5px;color:var(--dim)}
+
+/* side switch + amount */
+.head{display:flex;align-items:center;gap:8px;padding:14px 20px 0}
+.sw{display:flex;background:var(--bg2);border-radius:99px;padding:2px}
+.sw button{padding:5px 14px;border-radius:99px;font-size:12.5px;font-weight:600;color:var(--mut)}
+.sw button.on{background:var(--card);color:var(--ink);box-shadow:0 1px 2px rgba(0,0,0,.12)}
+.sw button.on.sell{color:var(--no)}
+.head .amt{margin-left:auto;display:flex;align-items:baseline;gap:6px;font-variant-numeric:tabular-nums}
+.head .amt b{font-size:16px;font-weight:600;letter-spacing:-.02em}
+.head .amt i{font-style:normal;font-size:12px;color:var(--mut)}
+
+/* hero */
+.hero{padding:22px 20px 20px;text-align:center}
+.hero .k{font-size:11px;font-weight:600;letter-spacing:.13em;text-transform:uppercase;color:var(--dim);margin-bottom:9px}
+.hero .big{
+  font-size:60px;line-height:.98;font-weight:700;letter-spacing:-.045em;font-variant-numeric:tabular-nums;
+  word-break:break-word;
+}
+.hero .big em{font-style:normal;font-size:24px;font-weight:600;color:var(--mut);margin-left:8px;letter-spacing:-.02em}
+.hero .u{font-family:var(--serif);font-size:15.5px;color:var(--mut);margin-top:11px;line-height:1.45}
+.hero .u b{font-family:var(--sans);font-size:14px;font-weight:600;color:var(--ink);font-variant-numeric:tabular-nums}
+.hero.muted .big{color:var(--dim)}
+.hero.stop .big{color:var(--no)}
+@media(max-width:400px){ .hero .big{font-size:46px} .hero .big em{font-size:19px} }
+
+.chips{display:flex;flex-wrap:wrap;justify-content:center;gap:6px;padding:0 20px 18px}
+.ch{font-size:12px;font-weight:500;border-radius:99px;padding:5px 11px;white-space:nowrap;background:var(--bg2);color:var(--mut)}
+.ch b{font-weight:600;font-variant-numeric:tabular-nums}
+.ch.g{background:var(--go-bg);color:var(--go)}
+.ch.r{background:var(--no-bg);color:var(--no)}
+.ch.w{background:var(--warn-bg);color:var(--warn)}
+
+/* comparison bars */
+.cmp{display:flex;flex-direction:column;gap:13px}
+.cr .t{display:flex;align-items:baseline;gap:8px;margin-bottom:5px}
+.cr .t .nm{font-size:13.5px;font-weight:600}
+.cr .t .nm i{font-style:normal;font-weight:400;color:var(--dim);font-size:12px;margin-left:5px}
+.cr .t .v{margin-left:auto;font-size:14px;font-weight:600;font-variant-numeric:tabular-nums}
+.cr .bar{height:9px;border-radius:99px;background:var(--bar);overflow:hidden}
+.cr .bar i{display:block;height:100%;border-radius:99px;background:var(--dim);font-style:normal}
+.cr.win .bar i{background:var(--go)}
+.cr.win .t .v{color:var(--go)}
+.cr .d{display:flex;gap:9px;margin-top:5px;font-size:12px;color:var(--dim);font-variant-numeric:tabular-nums}
+.cr .d b{color:var(--no);font-weight:600}
+.cr.win .d b{color:var(--go)}
+
+/* route ribbon */
+.rib{display:flex;height:11px;border-radius:99px;overflow:hidden;gap:2px;margin-bottom:14px}
+.rib i{font-style:normal}
+.r1{background:var(--v1)} .r2{background:var(--v2)} .r3{background:var(--v3)} .r4{background:var(--v4)}
+.leg{display:flex;flex-wrap:wrap;align-items:baseline;gap:2px 9px;padding:5px 0;font-size:13.5px}
+.leg .sw2{width:8px;height:8px;border-radius:2px;flex:none;position:relative;top:-1px}
+.leg .nm{font-weight:500}
+.leg .nm i{font-style:normal;color:var(--dim);font-weight:400}
+.leg .v{margin-left:auto;color:var(--mut);font-variant-numeric:tabular-nums;white-space:nowrap;text-align:right}
+
+/* oracle dial */
+.dial{position:relative;height:30px;margin:2px 0 14px}
+.dial .tr{position:absolute;top:11px;left:0;right:0;height:7px;border-radius:99px;
+  background:linear-gradient(90deg,var(--no-bg),var(--go-bg) 16%,var(--go-bg) 84%,var(--no-bg))}
+.dial .zz{position:absolute;top:7px;left:50%;width:1px;height:15px;background:var(--dim);opacity:.5}
+.dial .mk{position:absolute;top:5px;width:3px;height:19px;border-radius:2px;background:var(--go)}
+.dial .lb{position:absolute;top:22px;font-size:10.5px;color:var(--dim);font-variant-numeric:tabular-nums}
+
+/* pending stages */
+.stg{display:flex;gap:12px;padding:9px 0;align-items:flex-start}
+.stg .pin{width:16px;height:16px;border-radius:99px;flex:none;margin-top:2px;border:2px solid var(--line);position:relative}
+.stg.done .pin{background:var(--go);border-color:var(--go)}
+.stg.done .pin::after{content:"";position:absolute;left:4px;top:1px;width:4px;height:8px;border:solid var(--card);border-width:0 2px 2px 0;transform:rotate(42deg)}
+.stg.now .pin{border-color:var(--warn);animation:pulse 1.1s infinite}
+.stg.fail .pin{background:var(--no);border-color:var(--no)}
+.stg.fail .pin::after{content:"";position:absolute;left:5.5px;top:2px;width:2px;height:8px;background:var(--card)}
+@keyframes pulse{0%,100%{box-shadow:0 0 0 0 rgba(168,100,0,.34)}50%{box-shadow:0 0 0 5px rgba(168,100,0,0)}}
+.stg .w{flex:1;min-width:0}
+.stg .w .h{font-size:13.5px;font-weight:600}
+.stg .w .h span{float:right;font-weight:400;color:var(--dim);font-size:12px;font-variant-numeric:tabular-nums}
+.stg .w .p{font-family:var(--serif);font-size:14.5px;color:var(--mut);line-height:1.45;margin-top:2px}
+.stg.pend .w .h,.stg.pend .w .p{opacity:.45}
+
+/* choices */
+.opt{
+  display:block;width:100%;padding:13px 14px;border:1px solid var(--line);border-radius:14px;
+  background:var(--sunk);margin-top:9px;
+}
+.opt:hover{border-color:var(--dim)}
+.opt .h{font-size:14px;font-weight:600;display:flex;gap:8px;align-items:baseline}
+.opt .h .tagn{margin-left:auto;font-size:11.5px;font-weight:500;color:var(--dim);white-space:nowrap}
+.opt .p{font-family:var(--serif);font-size:14.5px;color:var(--mut);line-height:1.45;margin-top:3px}
+.opt.prime{background:var(--go-bg);border-color:transparent}
+.opt.prime .h{color:var(--go)}
+.opt.prime .p{color:var(--go);opacity:.86}
+.opt.cold .h{color:var(--mut)}
+
+/* footer / cta */
+.foot{padding:16px 20px 20px;border-top:1px solid var(--line2);background:var(--sunk)}
+.cta{
+  width:100%;padding:16px;border-radius:15px;background:var(--ink);color:var(--card);
+  font-weight:650;font-size:15.5px;text-align:center;letter-spacing:-.01em;
+}
+.cta.stop{background:var(--no-bg);color:var(--no);cursor:not-allowed}
+.cta.ghost{background:transparent;color:var(--mut);border:1px solid var(--line);font-weight:500;padding:12px;font-size:14px;margin-top:8px}
+.fn{text-align:center;font-size:12.5px;color:var(--dim);margin-top:11px;line-height:1.5}
+
+/* fills */
+.fills{margin-top:26px}
+.fh{display:flex;align-items:baseline;gap:8px;margin:0 2px 10px}
+.fh h2{font-size:11px;font-weight:600;letter-spacing:.12em;text-transform:uppercase;color:var(--dim)}
+.fh span{margin-left:auto;font-size:11.5px;color:var(--dim)}
+.f{background:var(--card);border:1px solid var(--line);border-radius:15px;padding:13px 15px;margin-bottom:8px}
+.f .l1{display:flex;align-items:baseline;gap:8px}
+.f .l1 .o{font-size:14px;font-weight:600;font-variant-numeric:tabular-nums}
+.f .l1 .o i{font-style:normal;font-weight:400;color:var(--dim);margin:0 3px}
+.f .l1 .st{margin-left:auto;font-size:10.5px;font-weight:600;letter-spacing:.07em;text-transform:uppercase;padding:2px 8px;border-radius:99px;white-space:nowrap}
+.f .l1 .st.ok{background:var(--go-bg);color:var(--go)}
+.f .l1 .st.hold{background:var(--no-bg);color:var(--no)}
+.f .l2{font-family:var(--serif);font-size:14px;color:var(--mut);line-height:1.45;margin-top:4px}
+.f .l2 b{font-family:var(--sans);font-weight:600;font-size:13px;color:var(--ink);font-variant-numeric:tabular-nums}
+.f .l2 .bad{color:var(--no)}
+.f .l3{display:flex;gap:10px;margin-top:7px;font-size:11.5px;color:var(--dim);font-variant-numeric:tabular-nums}
+.f .l3 a{color:var(--dim);text-decoration:none;border-bottom:1px dotted currentColor}
+
+@media(max-width:400px){ .leg{font-size:12.5px} .leg .nm{max-width:100%} }
+.tail{margin:22px 2px 0;font-family:var(--serif);font-size:13.5px;line-height:1.55;color:var(--dim)}
+</style>
+</head>
+<body>
+<div class="wrap">
+
+  <header>
+    <div class="brand">partit<b>i</b>o</div>
+    <div class="chip">Robinhood Chain</div>
+    <div class="sp"></div>
+    <button class="tgl" id="tgl" onclick="flip()" title="light / dark">◑</button>
+  </header>
+
+  <div class="sess" id="sess"><i class="bulb"></i><p>—</p></div>
+
+  <div class="strip" id="strip"></div>
+
+  <div class="card">
+    <div class="head">
+      <div class="sw">
+        <button id="sBuy"  onclick="side('buy')">Buy</button>
+        <button id="sSell" onclick="side('sell')">Sell</button>
+      </div>
+      <div class="amt" id="amt"></div>
+    </div>
+    <div id="body"></div>
+  </div>
+
+  <div class="fills">
+    <div class="fh"><h2>Recent orders</h2><span id="fillLive">live</span></div>
+    <div id="fills"></div>
+  </div>
+
+  <p class="tail">Every order is one signature. A relayer pays the gas and keeps a fee capped at
+  0.50% of the order. The split is chosen off-chain; what the chain enforces is the venue list,
+  your minimum out, and a Chainlink floor that no relayer can route around.</p>
+
+</div>
+
+<script>
+/* ===========================================================================
+   Same dataset and same arithmetic as direction A — so the two pages can be
+   compared line for line. dev = where the on-chain mid sits vs the Chainlink
+   mark, in bps. A refusal here is the arithmetic refusing.
+   =========================================================================== */
+const FEE = 1.83, CEIL = 2000;
+const T = {
+  AAPL: {n:'Apple',        px:336.04, chg:+0.62, v:7,  ref:41*60,        dev:-4.8,   band:85,  cap:300,
+         legs:[['Rialto MM-02','maker',42,335.71],['Uniswap v4','0.30% pool',31,335.88],['Uniswap v3','0.05% pool',18,336.09],['Uniswap v3','0.30% pool',9,336.24]],
+         rivals:[['KyberSwap','external aggregator',3,8.8],['Uniswap v4 alone','deepest single pool',1,15.4],['LI.FI','external aggregator',2,19.6]]},
+  NVDA: {n:'NVIDIA',       px:191.27, chg:+1.84, v:10, ref:6*60,         dev:-1.2,   band:80,  cap:1000,
+         legs:[['Uniswap v3','0.05% pool',38,191.25],['Rialto MM-07','maker',27,191.22],['Uniswap v4','0.05% pool',21,191.26],['Uniswap v3','0.30% pool',14,191.29]],
+         rivals:[['KyberSwap','external aggregator',4,3.1],['Uniswap v3 alone','deepest single pool',1,6.9],['LI.FI','external aggregator',2,9.4]]},
+  TSLA: {n:'Tesla',        px:421.36, chg:-0.93, v:6,  ref:12*60,        dev:-8.1,   band:85,  cap:1000, race:1,
+         legs:[['Uniswap v4','0.30% pool',40,421.02],['Rialto MM-03','maker',30,420.96],['Uniswap v3','0.05% pool',19,421.12],['Uniswap v3','0.30% pool',11,421.20]],
+         rivals:[['KyberSwap','external aggregator',3,7.4],['Uniswap v4 alone','deepest single pool',1,18.2],['LI.FI','external aggregator',2,24.0]]},
+  GOOGL:{n:'Alphabet',     px:247.80, chg:-0.11, v:7,  ref:4*3600+6*60,  dev:-1170,  band:90,  cap:300,
+         legs:[['Uniswap v3','0.30% pool',48,218.74],['Rialto MM-02','maker',31,218.88],['Uniswap v4','0.30% pool',21,218.91]],
+         rivals:[['KyberSwap','external aggregator',2,14.2],['Uniswap v3 alone','deepest single pool',1,31.6],['LI.FI','external aggregator',2,38.9]]},
+  COIN: {n:'Coinbase',     px:358.44, chg:+2.91, v:3,  ref:22*60,        dev:-262,   band:95,  cap:1000,
+         legs:[['Uniswap v4','1.00% pool',58,349.02],['Rialto MM-06','maker',42,349.10]],
+         rivals:[['KyberSwap','external aggregator',2,11.0],['Uniswap v4 alone','deepest single pool',1,22.5],['LI.FI','external aggregator',1,29.8]]},
+  SPY:  {n:'S&P 500 ETF',  px:684.20, chg:+0.18, v:5,  ref:6*3600+12*60, dev:-2.0,   band:85,  cap:300,
+         legs:[['Uniswap v3','0.05% pool',44,684.06],['Rialto MM-05','maker',29,684.02],['Uniswap v4','0.30% pool',27,684.18]],
+         rivals:[['KyberSwap','external aggregator',3,2.6],['Uniswap v3 alone','deepest single pool',1,5.8],['LI.FI','external aggregator',2,7.1]]},
+  SGOV: {n:'0–3M T-Bills', px:101.14, chg:+0.01, v:4,  ref:3*3600+47*60, dev:-3.0,   band:75,  cap:1000,
+         legs:[['Uniswap v3','0.05% pool',52,101.11],['Rialto MM-04','maker',31,101.10],['Uniswap v3','0.30% pool',17,101.13]],
+         rivals:[['KyberSwap','external aggregator',2,1.9],['Uniswap v3 alone','deepest single pool',1,4.4],['LI.FI','external aggregator',2,6.0]]},
+  GLD:  {n:'Gold ETF',     v:7, absent:1},
+  RDDT: {n:'Reddit',       v:5, absent:1},
+};
+const ORDER = ['AAPL','NVDA','TSLA','SPY','SGOV','GOOGL','COIN','GLD','RDDT'];
+/* The headline deviation is DERIVED from the leg prices, never asserted beside them:
+   a reader who size-weights the four fills gets exactly the bps printed on the card. */
+for(const k in T){ const t=T[k]; if(!t.legs) continue;
+  const w=t.legs.reduce((a,l)=>a+l[2]*l[3],0)/100;
+  t.dev=+(((w/t.px)-1)*1e4).toFixed(1); t.wavg=+w.toFixed(4);
+}
+
+let ui = {sym:'AAPL', side:'buy', phase:'quote', t0:0, tries:0, band:{}};
+const F=(n,d=2)=>n.toLocaleString('en-US',{minimumFractionDigits:d,maximumFractionDigits:d});
+const bp=n=>(n>=0?'+':'−')+Math.abs(n).toFixed(1)+' bps';
+function ago(sec,fine){
+  sec=Math.max(0,Math.round(sec));
+  const h=Math.floor(sec/3600),m=Math.floor(sec%3600/60),s=sec%60;
+  if(h) return h+'h '+String(m).padStart(2,'0')+'m';
+  if(m) return fine? m+'m '+String(s).padStart(2,'0')+'s' : m+' min';
+  return s+'s';
+}
+const RC=['r1','r2','r3','r4'], VC=['--v1','--v2','--v3','--v4'];
+
+/* ---- theme ---- */
+function flip(){
+  const cur=document.documentElement.getAttribute('data-theme');
+  const dark=matchMedia('(prefers-color-scheme: dark)').matches;
+  document.documentElement.setAttribute('data-theme',(cur? cur==='dark':dark)?'light':'dark');
+}
+
+/* ---- session, from the real clock ---- */
+function session(){
+  const d=new Date(), dow=d.getUTCDay();
+  const mins=d.getUTCHours()*60+d.getUTCMinutes()+d.getUTCSeconds()/60;
+  const open = dow>=1 && dow<=5 && mins>=810 && mins<1200;
+  let until;
+  if(open) until=(1200-mins)*60;
+  else{
+    const x=new Date(d); x.setUTCHours(13,30,0,0);
+    if(x<=d) x.setUTCDate(x.getUTCDate()+1);
+    while(x.getUTCDay()===0||x.getUTCDay()===6) x.setUTCDate(x.getUTCDate()+1);
+    until=(x-d)/1000;
+  }
+  return {open,until};
+}
+
+/* ---- the quote ---- */
+function quote(t,sideIs,amt,band){
+  band = band || t.band;
+  const k = 1 + t.dev/1e4;
+  if(sideIs==='buy'){
+    const toMkt=amt-FEE, fill=t.px*k, out=toMkt/fill, refOut=toMkt/t.px;
+    const floor=refOut*(1-band/1e4);
+    return {toMkt,fill,out,gross:out,refOut,floor,band,ok:out>=floor};
+  }
+  const gross=amt*t.px*k, out=gross-FEE, refOut=amt*t.px, floor=refOut*(1-band/1e4);
+  return {toMkt:amt,fill:t.px*k,out,gross,refOut,floor,band,ok:gross>=floor};
+}
+const AMT = {buy:10000, sell:40};
+
+/* ---- chrome ---- */
+function renderSess(){
+  const s=session(), el=document.getElementById('sess');
+  el.className='sess'+(s.open?'':' shut');
+  el.querySelector('p').innerHTML = s.open
+    ? 'The US market is <b class="good">open</b> for another <b>'+ago(s.until)+'</b>. Chainlink references are ticking and the pools are quoting their tightest.'
+    : 'The US market is <b class="warnc">closed</b> and reopens in <b>'+ago(s.until)+'</b>. Orders still fill — but the Chainlink reference keeps its last answer, so it ages, and the pools widen. <em>Every price below says how old its reference is.</em>';
+}
+function renderStrip(){
+  let h='';
+  for(const s of ORDER){
+    const t=T[s];
+    if(t.absent){ h+='<button class="tc mute'+(ui.sym===s?' on':'')+'" onclick="pickSym(\''+s+'\')"><span class="s">'+s+'</span><span class="p">not listed</span></button>'; continue; }
+    const floored = t.dev < -t.band;
+    h+='<button class="tc'+(ui.sym===s?' on':'')+'" onclick="pickSym(\''+s+'\')">'
+      +'<span class="s">'+s+(floored?'<i></i>':'')+'</span>'
+      +'<span class="p">'+F(t.px)+'</span></button>';
+  }
+  document.getElementById('strip').innerHTML=h;
+}
+function pickSym(s){ ui.sym=s; ui.phase='quote'; renderStrip(); render(); }
+function side(x){ ui.side=x; ui.phase='quote'; render(); }
+
+/* ---- pieces ---- */
+function bars(t,q){
+  const nets=[['partitio', (t.legs.length)+'-venue split', t.legs.length, 0]].concat(t.rivals)
+    .map(([nm,sub,v,b])=>({nm,sub,v,b,net:q.out*(1-b/1e4)}));
+  const lo=nets[nets.length-1].net, hi=nets[0].net, pad=(hi-lo)*0.11||0.001;
+  const base=lo-pad, top=hi+pad*0.35;
+  const isBuy = ui.side==='buy';
+  const unit = isBuy? ui.sym : 'USDG';
+  const d4 = isBuy?4:2;
+  let h='<div class="cmp">';
+  for(const r of nets){
+    const w=Math.max(4,(r.net-base)/(top-base)*100);
+    const dTok=+(r.net-nets[0].net).toFixed(d4), dUsd=isBuy? dTok*t.px : dTok;
+    h+='<div class="cr'+(r.b===0?' win':'')+'">'
+      +'<div class="t"><span class="nm">'+r.nm+'<i>'+r.sub+'</i></span><span class="v">'+F(r.net,d4)+'</span></div>'
+      +'<div class="bar"><i style="width:'+w.toFixed(1)+'%"></i></div>'
+      +'<div class="d">'+(r.b===0
+          ? '<b>best of the four</b>'
+          : '<b>−'+r.b.toFixed(1)+' bps</b> <span>−'+F(Math.abs(dTok),d4)+' '+unit+'</span> <span>−$'+F(Math.abs(dUsd))+'</span>')
+      +'</div></div>';
+  }
+  h+='</div><p class="fn" style="text-align:left;margin-top:12px">Bars start at '+F(base,d4)+', not zero — at true scale a 20 bps gap is a hairline. The four routes were priced on the identical order in the same block.</p>';
+  return h;
+}
+function route(t,q){
+  let h='<div class="rib">';
+  t.legs.forEach((l,i)=>{ h+='<i class="'+RC[i]+'" style="width:'+l[2]+'%"></i>'; });
+  h+='</div>';
+  const isBuy=ui.side==='buy';
+  t.legs.forEach((l,i)=>{
+    const share=l[2]/100;
+    const got = isBuy ? (q.toMkt*share)/l[3] : (AMT.sell*share)*l[3];
+    h+='<div class="leg"><i class="sw2" style="background:var('+VC[i]+')"></i>'
+      +'<span class="nm">'+l[0]+' <i>'+l[1]+'</i></span>'
+      +'<span class="v">'+l[2]+'% at '+F(l[3])+' → '+(isBuy? F(got,4)+' '+ui.sym : F(got)+' USDG')+'</span></div>';
+  });
+  return h;
+}
+function dial(t,q){
+  const pos=50+Math.max(-48,Math.min(48, (t.dev/t.band)*50));
+  return '<div class="dial"><div class="tr"></div><div class="zz"></div>'
+    +'<div class="mk" style="left:'+pos.toFixed(1)+'%"></div>'
+    +'<div class="lb" style="left:0">−'+t.band+' bps · floor</div>'
+    +'<div class="lb" style="left:50%;transform:translateX(-50%)">mark</div>'
+    +'<div class="lb" style="right:0">+'+t.band+'</div></div>';
+}
+
+/* ---- the card ---- */
+function render(){
+  const t=T[ui.sym], isBuy=ui.side==='buy';
+  document.getElementById('sBuy').className  = isBuy?'on':'';
+  document.getElementById('sSell').className = isBuy?'':'on sell';
+  const body=document.getElementById('body'), amtEl=document.getElementById('amt');
+
+  /* ---------- a ticker that is not offered ---------- */
+  if(t.absent){
+    amtEl.innerHTML='';
+    body.innerHTML =
+      '<div class="hero stop"><div class="k">Not listed</div>'
+      + '<div class="big" style="font-size:46px;letter-spacing:-.05em">'+ui.sym+'</div>'
+      + '<p class="u">'+t.v+' venues would route it. The liquidity is real. The price to check it against is not.</p></div>'
+      + '<div class="sec"><div class="lbl">Why</div>'
+      + '<p class="say">Every order on partitio is floored by a price partitio did not make. On this chain '
+      + ui.sym+' is priced by a <b>Uniswap v3 pool</b> — the same pool your order would move. '
+      + 'A floor taken from the thing it is guarding will agree with any price you push it to, so it is not a floor at all.</p>'
+      + '<p class="say" style="margin-top:12px"><em>Two of the thirty-seven tokenized stocks on this chain are in that position. '
+      + ui.sym+' appears the day a Chainlink '+ui.sym+'/USD feed does — nothing else has to change, and nothing about it is partitio\'s to fix.</em></p></div>'
+      + '<div class="foot"><button class="cta ghost" onclick="pickSym(\'AAPL\')">Go back to the 35 that do trade</button></div>';
+    return;
+  }
+
+  const BAND = ui.band[ui.sym] || t.band;
+  const amt = isBuy? AMT.buy : AMT.sell;
+  const q = quote(t, ui.side, amt, BAND);
+  amtEl.innerHTML = isBuy
+    ? '<b class="n">'+F(amt)+'</b><i>USDG</i>'
+    : '<b class="n">'+F(amt,4)+'</b><i>'+ui.sym+'</i>';
+
+  /* ---------- signed, waiting, maybe refused ---------- */
+  if(ui.phase==='pending'||ui.phase==='held'||ui.phase==='filled'){ return renderLive(t,q); }
+
+  /* ---------- the sell the floor refuses ---------- */
+  if(!q.ok){
+    const gap=Math.abs(t.dev)/100, short=q.floor-q.gross, need=Math.ceil(Math.abs(t.dev));
+    const buyGets = (AMT.buy-FEE)/(t.px*(1+t.dev/1e4));
+    body.innerHTML =
+      '<div class="hero stop"><div class="k">How far the book is under Chainlink</div>'
+      + '<div class="big n">−'+gap.toFixed(2)+'<em>%</em></div>'
+      + '<p class="u">So this sell will not fill. <b>'+F(amt,4)+' '+ui.sym+'</b> is worth <b>'+F(q.refOut)+' USDG</b> at the mark; '
+      + 'the best the chain will pay is <b>'+F(q.gross)+'</b>.</p></div>'
+      + '<div class="chips"><span class="ch r">sells paused</span><span class="ch">buys unaffected</span>'
+      + '<span class="ch">mark '+ago(t.ref)+' old</span></div>'
+
+      + '<div class="sec"><div class="lbl">What this is</div>'
+      + '<p class="say">Not an outage. partitio floors every sell at the Chainlink mark minus your band, and right now '
+      + 'the '+t.legs.length+' venues quoting '+ui.sym+' are all below that floor — <b>'+F(short)+' USDG</b> below it on this order. '
+      + 'The floor lives in the contract, so no relayer can route around it and no retry will sneak past it.</p>'
+      + '<p class="say" style="margin-top:11px"><em>Selling smaller does not help. This is the whole book sitting under the mark, '
+      + 'not your size pushing one pool.</em></p></div>'
+
+      + '<div class="sec"><div class="lbl">What you can do<span>three, honestly ranked</span></div>'
+      + '<button class="opt prime" onclick="side(\'buy\')"><div class="h">Buy '+ui.sym+' instead<span class="tagn">live now</span></div>'
+      +   '<div class="p">The same dislocation, the other way round: 10,000 USDG buys '+F(buyGets,4)+' '+ui.sym+', worth <b>$'+F((AMT.buy-FEE)/(1+t.dev/1e4))+'</b> at the mark. Cheap to buy is what "bad to sell" means.</div></button>'
+      + '<button class="opt" onclick="hold()"><div class="h">Sign it and let it wait<span class="tagn">costs nothing</span></div>'
+      +   '<div class="p">It goes out the first block the book comes back inside ±'+BAND+' bps. The relayer pays for every attempt it makes on your behalf — a refused attempt bills you nothing.</div></button>'
+      + '<button class="opt cold" onclick="widen('+need+')"><div class="h">Widen your floor to '+need+' bps<span class="tagn">allowed, up to '+CEIL+'</span></div>'
+      +   '<div class="p">It would fill. It would also mean selling '+gap.toFixed(2)+'% under the mark and handing <b>'+F(q.refOut-q.gross)+' USDG</b> to whoever is on the other side. partitio will relay that order. It will not pick it for you.</div></button></div>'
+
+      + '<div class="foot"><button class="cta stop" disabled>Nothing to sign while the floor is unmet</button>'
+      + '<p class="fn">Floor '+F(q.floor)+' USDG · best available '+F(q.gross)+' USDG · checked every block</p></div>';
+    return;
+  }
+
+  /* ---------- the good quote ---------- */
+  const widened = BAND!==t.band;
+  const unit = isBuy? ui.sym : 'USDG';
+  const d4 = isBuy?4:2;
+  const best = q.out*(1-t.rivals[1][3]/1e4);
+  const gainTok = +(q.out-best).toFixed(d4), gainUsd = isBuy? gainTok*t.px : gainTok;
+  const markValue = isBuy ? q.out*t.px : q.refOut;
+
+  body.innerHTML =
+    '<div class="hero"><div class="k">You receive</div>'
+    + '<div class="big n">'+F(q.out,d4)+'<em>'+unit+'</em></div>'
+    + '<p class="u">'+(isBuy
+        ? 'Worth <b>$'+F(markValue)+'</b> at Chainlink\'s mark, for the <b>$'+F(amt)+'</b> you are paying. The pools here sit under the mark, so a buyer collects what a seller would pay.'
+        : 'Against <b>'+F(q.refOut)+' USDG</b> at Chainlink\'s mark — <b>'+bp(t.dev)+'</b>, comfortably inside your ±'+BAND+' bps floor.')+'</p></div>'
+
+    + '<div class="chips"><span class="ch g"><b>$0.00</b> gas</span><span class="ch g"><b>1</b> signature</span>'
+    + '<span class="ch"><b>'+t.legs.length+'</b> venues</span>'
+    + '<span class="ch'+(widened?' r':'')+'"><b>±'+BAND+'</b> bps floor'+(widened?' — widened by you':'')+'</span>'
+    + '<span class="ch'+(t.ref>3*3600?' w':'')+'">mark '+ago(t.ref)+' old</span></div>'
+
+    + (widened? '<div class="sec"><div class="lbl">You moved the floor</div><p class="say bad">Your band is '+BAND
+        +' bps, not the '+t.band+' partitio proposed. The order clears because you agreed to accept '
+        +(Math.abs(t.dev)/100).toFixed(2)+'% under the mark, which is <b>'+F(Math.abs(q.refOut-q.gross))+' USDG</b>. '
+        +'This is a legal order and a bad one.</p>'
+        +'<button class="opt" onclick="unwiden()"><div class="h">Put it back to ±'+t.band+' bps</div>'
+        +'<div class="p">Which returns the order to refused, where it belongs.</div></button></div>' : '')
+
+    + '<div class="sec"><div class="lbl">The same order, everywhere else<span>one block, one size</span></div>'
+    + bars(t,q) + '</div>'
+
+    + '<div class="sec"><div class="lbl">Where it goes<span>'+(isBuy? F(q.toMkt)+' USDG':F(amt,4)+' '+ui.sym)+'</span></div>'
+    + route(t,q)
+    + '<p class="say" style="margin-top:13px">'+t.legs.length+' venues, one signature, <b>one transaction</b>. '
+    + 'Splitting it earned <b>'+F(gainTok,d4)+' '+unit+'</b>'+(isBuy? ' — <b>$'+F(Math.abs(gainUsd))+'</b> —':'')+' over the deepest single pool, '
+    + 'against the <b>'+F(FEE)+' USDG</b> the relayer keeps. <em>The routing paid for the fee '
+    + (Math.abs(gainUsd)/FEE).toFixed(1)+' times over.</em></p></div>'
+
+    + '<div class="sec"><div class="lbl">The floor<span>enforced on-chain, on the total</span></div>'
+    + dial(t,q)
+    + '<p class="say">Chainlink last marked '+ui.sym+' at <b>'+F(t.px)+'</b>, <b>'+ago(t.ref)+'</b> ago. Your fill lands '
+    + '<b>'+bp(t.dev)+'</b> from it, inside a band of <b>±'+BAND+' bps</b> — which is '+(BAND===t.band?'50 for the feed\'s own deviation trigger, '+(BAND-55)+' for pool fees and 5 for slippage':'yours, not ours')+'.</p>'
+    + '<p class="say" style="margin-top:11px"><em>A feed that stopped entirely is the only thing rejected on age, and that takes 120 hours — '
+    + 'the longest gap ever measured on this chain is 87.</em></p></div>'
+
+    + '<div class="foot"><button class="cta" onclick="sign()">'+(isBuy?'Sign to buy':'Sign to sell')+' — one signature</button>'
+    + '<p class="fn">No ETH. No approval. No gas top-up.<br>You sign '+(isBuy?F(amt)+' USDG in':F(amt,4)+' '+ui.sym+' in')
+    + ' and '+F(q.floor,d4)+' '+unit+' as the least you will accept.</p></div>';
+}
+
+/* ---- signed → in flight → filled (or refused, and still live) ---- */
+function sign(){ ui.phase='pending'; ui.t0=Date.now(); ui.tries=0; render(); tick(); }
+function hold(){ ui.phase='held'; ui.t0=Date.now(); ui.tries=2; render(); }
+function widen(b){ ui.band[ui.sym]=b; ui.phase='quote'; render(); renderStrip(); }
+function unwiden(){ delete ui.band[ui.sym]; render(); renderStrip(); }
+
+let timer=null;
+function tick(){
+  clearInterval(timer);
+  timer=setInterval(()=>{
+    if(ui.phase!=='pending'&&ui.phase!=='held'){ clearInterval(timer); return; }
+    const t=(Date.now()-ui.t0)/1000, k=T[ui.sym];
+    if(ui.phase==='pending' && k.race && ui.side==='sell' && t>3.2 && ui.tries===0){ ui.tries=1; ui.phase='held'; ui.t0=Date.now()-3.4e3; }
+    else if(ui.phase==='held' && t>11){ ui.phase='filled'; }
+    else if(ui.phase==='pending' && t>6.2){ ui.phase='filled'; }
+    render();
+    if(ui.phase==='filled') clearInterval(timer);
+  },250);
+}
+
+function renderLive(t,q){
+  const el=(Date.now()-ui.t0)/1000, isBuy=ui.side==='buy';
+  const unit=isBuy?ui.sym:'USDG', d4=isBuy?4:2, body=document.getElementById('body');
+  const hash='0x'+(isBuy?'7f3a':'c2e6')+'…'+(isBuy?'c21b':'3a44');
+  const gain=+(q.out - q.out*(1-t.rivals[1][3]/1e4)).toFixed(d4), gainUsd=isBuy? gain*t.px : gain;
+  const s=(c,h,sub,time)=>'<div class="stg '+c+'"><i class="pin"></i><div class="w"><div class="h">'+h
+      +(time?'<span>'+time+'</span>':'')+'</div><div class="p">'+sub+'</div></div></div>';
+
+  if(ui.phase==='filled'){
+    body.innerHTML =
+      '<div class="hero"><div class="k">Filled</div>'
+      + '<div class="big n good">'+F(q.out,d4)+'<em>'+unit+'</em></div>'
+      + '<p class="u">'+(ui.tries?'Second attempt. ':'')+'<b>'+(ui.tries?'14':'6')+' seconds</b> between your signature and settlement, across <b>'+t.legs.length+'</b> venues, in one transaction.</p></div>'
+      + '<div class="chips"><span class="ch g">'+hash+'</span><span class="ch g"><b>$0.00</b> gas</span>'
+      + '<span class="ch"><b>'+bp(t.dev)+'</b> from the mark</span></div>'
+      + '<div class="sec"><div class="lbl">How it filled</div>'+route(t,q)
+      + '<p class="say" style="margin-top:13px">Together those legs returned <b>'+F(gain,d4)+' '+unit+'</b>'
+      + (isBuy? ' — <b>$'+F(Math.abs(gainUsd))+'</b> —' : '')+' more than the '
+      + 'deepest single pool would have on its own, against the <b>'+F(FEE)+' USDG</b> fee. '
+      + '<em>That difference is the entire reason to split an order.</em></p></div>'
+      + '<div class="sec"><p class="say">Nothing left your wallet but the <b>'+(isBuy?F(AMT.buy)+' USDG':F(AMT.sell,4)+' '+ui.sym)+'</b> you signed. '
+      + 'The relayer paid the network, took <b>'+F(FEE)+' USDG</b> out of the trade, and could not have taken more — you signed the cap too.'
+      + (ui.tries?' <em>Its first attempt reverted and cost it gas, not you.</em>':'')+'</p></div>'
+      + '<div class="foot"><button class="cta" onclick="again()">Place another order</button></div>';
+    return;
+  }
+
+  if(ui.phase==='held'){
+    const left=Math.max(0,300-el);
+    body.innerHTML =
+      '<div class="hero muted"><div class="k">Signed · not filled · still live</div>'
+      + '<div class="big n">'+ago(left,1)+'</div>'
+      + '<p class="u">left on your signature. The relayer is retrying every block. <b>'+ui.tries+'</b> attempt'+(ui.tries===1?'':'s')+' so far.</p></div>'
+      + '<div class="chips"><span class="ch r">refused at the floor</span><span class="ch">order still valid</span><span class="ch g">nothing spent</span></div>'
+      + '<div class="sec"><div class="lbl">What happened</div>'
+      + s('done','You signed','One EIP-712 message. It authorises exactly '+(isBuy?F(AMT.buy)+' USDG':F(AMT.sell,4)+' '+ui.sym)+' and nothing else.', ago(el,1)+' ago')
+      + s('done','The relayer took it','And paid the gas to try '+(ui.tries===1?'once':ui.tries+' times')+' — every attempt is billed to it, not to you.','')
+      + s('fail','The fill was refused','The book moved under your floor between signing and landing. The contract reverted before a single token changed hands.','block 71,341,208')
+      + s('now','It goes out again','Every block, until it clears the floor or the deadline passes.','retrying')
+      + '</div>'
+      + '<div class="sec"><p class="say">This is the design working. Your order is an instruction with a floor on it, not a transaction you already paid for — '
+      + 'so a refusal costs you <b>nothing</b> and leaves the order standing. '
+      + '<em>The two failed attempts cost the relayer gas. That is its business, not yours.</em></p></div>'
+      + '<div class="foot"><button class="cta ghost" onclick="again()">Let it expire and start over</button>'
+      + '<p class="fn">When the deadline passes the signature is simply dead. Nothing needs cancelling and nothing needs gas.</p></div>';
+    return;
+  }
+
+  const st1=el>0, st2=el>1.3, st3=el>3.1;
+  body.innerHTML =
+    '<div class="hero muted"><div class="k">Signed · waiting on the fill</div>'
+    + '<div class="big n">'+F(q.out,d4)+'<em>'+unit+'</em></div>'
+    + '<p class="u">at least <b>'+F(q.floor,d4)+' '+unit+'</b>, which is the floor you signed. Someone else is paying to make it happen.</p></div>'
+    + '<div class="chips"><span class="ch w">'+el.toFixed(1)+'s elapsed</span><span class="ch">deadline 5m 00s</span><span class="ch g">no gas from you</span></div>'
+    + '<div class="sec"><div class="lbl">Where it is</div>'
+    + s('done','Signed','One message, in your wallet, offline. No transaction yet.','0.0s')
+    + s(st2?'done':'now','Relayer has it','It is quoting the '+t.legs.length+' venues again at the current block — your floor is checked against the price at fill, not at signing.',st2?'1.3s':'…')
+    + s(st3?'done':(st2?'now':'pend'),'In flight','One transaction carrying the whole split, the venue proofs, your minimum, and the oracle check.',st3?'3.1s':'…')
+    + s('pend','Filled','Settlement and the receipt.','')
+    + '</div>'
+    + '<div class="sec"><p class="say">There is a real gap here, usually a few seconds, and partitio would rather show it than pretend it away. '
+    + 'In that gap the price can move against you — <em>which is exactly what the floor is for.</em> '
+    + 'If the fill comes back under it, the transaction reverts, your order stays live, and the wasted gas is the relayer\'s.</p></div>'
+    + '<div class="foot"><button class="cta ghost" onclick="again()">Stop waiting</button>'
+    + '<p class="fn">Nothing has moved yet. Stopping here simply means never broadcasting it.</p></div>';
+}
+function again(){ clearInterval(timer); ui.phase='quote'; render(); }
+
+/* ---- recent orders ---- */
+const N0=Date.now();
+const FILLS=[
+  {o:'10,000.00 USDG', to:'29.7672 AAPL', st:'Filled', cls:'ok', at:134,
+   l2:'Four venues, one transaction. The split beat the deepest pool by <b>$15.39</b> — eight times the <b>1.83 USDG</b> fee.',
+   m:['+6s to fill','−4.8 bps from the mark','0x7f3a…c21b']},
+  {o:'40.0000 GOOGL', to:'USDG', st:'Held', cls:'hold', at:148, live:1,
+   l2:'Refused at the floor and <span class="bad">still live</span> — the whole GOOGL book is 11.70% under Chainlink. Two attempts, <b>0.00</b> spent.',
+   m:['2 attempts','deadline','0xc2e6…3a44']},
+  {o:'6.0000 TSLA', to:'2,524.32 USDG', st:'Filled', cls:'ok', at:502,
+   l2:'Needed a second attempt: the book slipped under the floor while the first was in flight. The retry cleared at <b>−8.1 bps</b>.',
+   m:['+14s to fill','2 attempts','0x1c08…9ef4']},
+  {o:'2,500.00 USDG', to:'24.7078 SGOV', st:'Filled', cls:'ok', at:735,
+   l2:'Three venues. The reference was <b>3h 47m</b> old and the fill still landed <b>−3.0 bps</b> from it — a quiet feed is not a stale price.',
+   m:['+5s to fill','−3.0 bps','0x3e91…12aa']},
+];
+function renderFills(){
+  const el=(Date.now()-N0)/1000;
+  let h='';
+  for(const f of FILLS){
+    const t=f.at+el;
+    h+='<div class="f"><div class="l1"><span class="o">'+f.o+' <i>→</i> '+f.to+'</span>'
+      + '<span class="st '+f.cls+'">'+f.st+'</span></div>'
+      + '<div class="l2">'+f.l2+'</div>'
+      + '<div class="l3">'+f.m.map(x=>x==='deadline'
+          ? ago(Math.max(0,300-t),1)+' left'
+          : (x.indexOf('0x')===0?'<a href="#'+x+'">'+x+'</a>':x)).join('<span>·</span>')
+      + '<span style="margin-left:auto">'+ago(t)+' ago</span></div></div>';
+  }
+  document.getElementById('fills').innerHTML=h;
+}
+
+renderSess(); renderStrip(); render(); renderFills();
+setInterval(()=>{ renderSess(); renderFills(); },1000);
+</script>
+</body>
+</html>
