@@ -1,7 +1,13 @@
 # SECURITY
 
-Tooling that actually ran: **Slither 0.11.x** (via `.venv-sec`, solc 0.8.26) over `src/v2/`.
-Echidna/Medusa property fuzzing is **not yet run** and is not claimed anywhere.
+Tooling that actually ran: **Slither 0.11.x** (via `.venv-sec`, solc 0.8.26) over `src/v2/`, and
+**Medusa 1.5.1** property fuzzing (7 properties, ~500k calls per campaign).
+
+NOTE ON A PREVIOUS RUN: Medusa's config sets `slither.useSlither: true`, but slither lives in
+`.venv-sec/bin` and was not on PATH for two campaigns, so the log carried
+`Failed to run slither ... executable file not found` and the fuzzer ran without slither-derived
+constant seeding. Fixed by putting `.venv-sec/bin` on PATH; recorded because a warning in a log
+nobody reads is how a tool silently does not run.
 
 Command:
 
@@ -138,3 +144,95 @@ Two fixes, because one would have hidden the other:
 
 The response now also carries `unmeasuredRungs / totalRungs`, so thin coverage is visible in the
 payload instead of quietly shrinking the split.
+
+---
+
+# Slither triage — final `src/`, 2026-09-25
+
+Run against the frozen contracts, all impacts (the earlier run in this file excluded
+informational and low). **108 detectors: 10 High, 27 Medium, 11 Low, 58 Informational,
+2 Optimization.** Every High and Medium is dispositioned below. None is fixed by a code change,
+and each says why rather than being waved away.
+
+Raw output: `slither src/v2 --json` — re-runnable with `.venv-sec/bin` on PATH.
+
+## High (10)
+
+### `incorrect-exp` x1 — NOT OURS
+`Math.mulDiv` in OpenZeppelin uses `(3 * denominator) ^ 2`. That `^` is a deliberate XOR in the
+Newton–Raphson seed for a modular inverse, not a typo for `**`. Library code, known Slither false
+positive, unchanged.
+
+### `arbitrary-send-erc20-permit` x1 — FALSE POSITIVE, and already pinned by a test
+`_pullIn` calls `safeTransferFrom(o.owner, address(this), o.amountIn)` after a `permit`. Slither's
+concern is that `from` is attacker-controlled. It is not: `ECDSA.recover(oh, ...) != o.owner`
+reverts at `GaslessEntry.sol:164`, **before** `_pullIn` at `:169`, so `o.owner` is by construction
+the address that signed.
+
+This is exactly the scenario `test_cannotPullFromAVictimWithAStandingAllowance` exists for — a
+victim with a standing allowance and an order signed by somebody else, which must revert
+`BadSignature`. **If anyone moves the ECDSA check below `_pullIn`, that test fails.** That is the
+control, not this comment.
+
+### `reentrancy-balance` x8 — THIS IS THE DESIGN, not a defect
+All eight are the same shape: a balance read before an external call and used after it. That is
+precisely the R-06 fix. `_execute` measures what a venue actually consumed as
+`balBefore - balAfter` bracketed around the venue call, because trusting the call's return value
+is what let short fills be booked as full fills and stranded the residue permanently.
+
+Why the "stale balance" is not exploitable:
+- `swapExactIn` is `nonReentrant` (EIP-1153 transient guard), so a venue cannot re-enter it.
+- `_execute` is `internal`; the only re-entry surfaces are the two callbacks, and both authenticate
+  against transient slots written immediately before the call (`T_EXPECTED`, `T_PAYTOKEN`,
+  `T_BUDGET`, `T_UNLOCKED`) rather than against anything the caller supplies.
+- Venues are Merkle-committed at deploy; an arbitrary contract cannot be a leg.
+- A venue that *donates* tokenIn back mid-call can only make `used` smaller, never larger —
+  `if (balAfter >= balBefore) return 0` and `if (used > amountIn) revert LegOverdraw`. The error is
+  therefore conservative in the router's favour, and a donation ends up refunded to the payer.
+
+Kept as-is deliberately: removing the pattern would mean going back to trusting return values,
+which is the bug this code was written to fix.
+
+## Medium (27)
+
+### `divide-before-multiply` x10 — 9 in OpenZeppelin `Math.mulDiv`, 1 in `OracleGuard`
+The OZ ones are library internals. The `OracleGuard` one is the decimal rescale, whose rounding
+direction is deliberate and fuzzed: `testFuzz_decimalsRoundTripIsExactToOneWei` (256 runs) checks
+it against an independently computed rational value, and `testFuzz_floorNeverRoundsAgainstTheFill`
+(256 runs) checks the truncation can only ever favour the fill by at most one wei.
+
+### `unused-return` x8 — deliberate on every site
+Two shapes. `OracleGuard.enforce(...)`'s return values are discarded in `GaslessEntry.fill`,
+because the *revert* is the product and `floorOut`/`updatedAt` are for callers that want to display
+them. And `_viaRouter` discards `ROUTER.swapExactIn`'s return value on purpose — it measures the
+result by bracketed balance delta instead, which is the R-01 fix. Using the return value there
+would reintroduce exactly the accounting the review found broken.
+
+### `uninitialized-local` x6 — accumulators
+`legSum`, `orig`, `assigned`, `total`, `unfilled`, `filled`. Solidity zero-initialises; these are
+sum accumulators whose first write is `+=`. No path reads them before the loop.
+
+### `incorrect-equality` x3 — strict equality on a measured delta is the correct test
+`used == 0`, `spent == 0`, `balAfter >= balBefore`. These compare quantities the contract itself
+computed from two of its own balance reads, not an oracle or an external report, so `==` is exact
+rather than approximate.
+
+## Low (11) — noted, not actioned
+
+`calls-loop` x6: external calls inside the leg loop **are** the router — a split across venues is
+the product. A leg that reverts, declines or short-fills is handled (`try/catch`, measured
+consumption, refund), which is what makes the loop safe rather than avoiding it.
+
+`timestamp` x4: `block.timestamp` comparisons for the deadline, the feed-age ceiling, the signer's
+`maxFeedAge` and the future-timestamp tolerance. All four are intended semantics; the tolerances
+are measured rather than guessed (see `OracleGuard`'s own comments).
+
+`reentrancy-events` x1: `AggregatorLegRejected` is emitted after the aggregator call in
+`_fillSingle`. Event ordering only; no state is read after it.
+
+## What Slither did NOT find
+
+Worth stating, because a clean-ish Slither report is easy to over-read. It found none of the
+twelve issues the independent review found, none of the twelve the follow-up audit found, and
+neither of the two the adversarial hunters found — including the HIGH where an accepted aggregator
+sliver ended the fill. Static analysis catches shapes; those were all semantics.
