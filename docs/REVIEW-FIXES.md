@@ -145,6 +145,36 @@ evaluated against anything. `aggFills` was 0.
 The harness now carries an honest aggregator mode, and the reachability file asserts the counts:
 buys 20, sells 20, honest aggregator route 20, and **40 skimming attempts complete 0 fills**.
 
+### What the call count does and does not mean
+
+**500,363 calls is not 500,363 calls of exploration.** The campaign reaches 2,249 branches within
+about 21 seconds and ~25,000 calls, then finds nothing new for the remaining ~475,000 — the corpus
+actually shrinks as it prunes. Read the headline as depth of repetition, not depth of search. Said
+here because quoting the raw number as evidence of thoroughness would be the same kind of false
+comfort as a vacuous property.
+
+### Two coverage gaps found by reading lcov rather than trusting the passes
+
+Both were found by the fresh-context re-verification, which passed everything and then went looking
+for why.
+
+| line | before | after | why |
+|---|---|---|---|
+| `FeedFromTheFuture` (R-10) | **0 hits** across 211,126 guard evaluations | 24,363 | `FuzzFeed.set()` always wrote `block.timestamp`, so the mock could never report a future timestamp and the branch was unreachable. R-10 rested entirely on unit tests. |
+| `FeedDead` | 172,100 — **80% of all guard evaluations** | 8,496 | `blockTimestampDelayMax` was 604,800s against a 432,000s dead-feed ceiling, so a single block step could age the feed out. Pressure on the actual price floor was ~a fifth of nominal. |
+
+`BelowOracleFloor` is now reached 156,138 times, against ~39,026 evaluations that previously
+survived the age check at all.
+
+### A note on `vm.expectRevert` that cost a cycle
+
+In Foundry 1.8.1, `vm.expectRevert(bytes4)` means "the revert data is **exactly** these four bytes".
+It therefore fails against any error carrying arguments, which is most of them here. Selector-only
+matching is `vm.expectPartialRevert(bytes4)`. Ten assertions in the review tests were bare
+`vm.expectRevert()` — passing on any revert at all, including one for an unrelated reason — and are
+now typed. Two stay bare on purpose and say so: those reverts come from the USDG diamond, whose
+error type is not ours to name.
+
 The same class of blindness was in the original harness: it only ever built buys, which is exactly
 where the fee-denomination bug is invisible, because on a buy the fee never touches the output.
 
