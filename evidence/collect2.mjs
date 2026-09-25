@@ -136,8 +136,21 @@ const lower = (a) => a.toLowerCase();
 const log = (...a) => console.log(new Date().toISOString(), ...a);
 
 let rpcId = 0;
+const MAX_BATCH = 25;
+
 async function rpcBatch(calls, retries = 4) {
   if (!calls.length) return [];
+  // Chunked at 25. The relayer hit exactly this: a 56-call batch was truncated by the endpoint,
+  // the missing rungs read as "unmeasured", greedy stopped early and the split looked thin. A
+  // truncated batch is indistinguishable from a thin market, which is what makes it dangerous.
+  // The engine's own data shows zero transport failures to date, so this is prevention.
+  if (calls.length > MAX_BATCH) {
+    const out = [];
+    for (let i = 0; i < calls.length; i += MAX_BATCH) {
+      out.push(...(await rpcBatch(calls.slice(i, i + MAX_BATCH), retries)));
+    }
+    return out;
+  }
   const body = calls.map((c) => ({ jsonrpc: "2.0", id: ++rpcId, method: "eth_call", params: [{ to: c.to, data: c.data }, "latest"] }));
   for (let i = 0; i <= retries; i++) {
     if (i) await sleep(1500 * 2 ** (i - 1));
@@ -305,12 +318,18 @@ const insQuote = db.prepare(`INSERT INTO quote (run_id,ticker,direction,size_usd
   VALUES (?,?,?,?,?,?,?,?,?,?,?,?)`);
 // provider column added in place so the v2 series keeps one table across Kyber / LI.FI / 0x
 try { db.exec("ALTER TABLE kyber_call ADD COLUMN provider TEXT NOT NULL DEFAULT 'kyber'"); } catch { /* already added */ }
+// A rung can be missing for two completely different reasons, and conflating them is how a
+// filter ends up deleting every large-size row. `transport_gaps` counts rungs lost to RPC
+// failure (a data defect, which invalidates the row); `refused_rungs` counts venues that
+// genuinely could not fill that size (real market structure, which is the finding itself).
+try { db.exec("ALTER TABLE agg ADD COLUMN transport_gaps INTEGER NOT NULL DEFAULT 0"); } catch {}
+try { db.exec("ALTER TABLE agg ADD COLUMN refused_rungs INTEGER NOT NULL DEFAULT 0"); } catch {}
 const insKyber = db.prepare(`INSERT INTO kyber_call (run_id,at,provider,ticker,direction,size_usd,restricted,status,cls,http,api_code,hops,families,rfq_share,amount_out,err)
   VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`);
-const insAgg = db.prepare(`INSERT OR REPLACE INTO agg (run_id,ticker,direction,size_usd,amount_in,best_venue_out,best_venue_id,best_venue_family,
+const insAgg = db.prepare(`INSERT OR REPLACE INTO agg (run_id,ticker,direction,size_usd,amount_in,transport_gaps,refused_rungs,best_venue_out,best_venue_id,best_venue_family,
   best_v3_out,best_v4_out,best_maker_out,split_out,split_kind,split_legs,split_venue_count,
   kyber_all_out,kyber_all_status,kyber_onchain_out,kyber_onchain_status,lifi_out,lifi_status)
-  VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`);
+  VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`);
 
 let lastLifi = 0;
 
@@ -371,11 +390,16 @@ async function runOnce() {
           family: v.family || (v.kind === "v4" ? "uniswap-v4" : "uniswapv3"),
           kind: v.kind, points: new Array(K_CHUNKS).fill(null),
         }));
+        let transportGaps = 0, refusedRungs = 0;
         jobs.forEach((j, i) => {
           const vi = venues.indexOf(j.v);
           const d = decodeQuote(j.v, res[i]);
           nQuotes++;
-          if (d.status === "unmeasured") nUnmeasured++;
+          if (d.status === "unmeasured") {
+            nUnmeasured++;
+            if (/execution reverted/i.test(d.err || "")) refusedRungs++; else transportGaps++;
+          }
+          if (d.status === "refused") refusedRungs++;
           if (d.status === "ok") ladders[vi].points[j.n - 1] = d.out;
           insQuote.run(runId, ticker, direction, sizeUsd, j.amt.toString(), ladders[vi].family,
             ladders[vi].kind, ladders[vi].id, j.n,
@@ -392,7 +416,17 @@ async function runOnce() {
           if (L.kind === "maker" && (bestMk === null || full > bestMk)) bestMk = full;
         });
 
-        const split = greedySplit(ladders, amountIn, K_CHUNKS);
+        let split = greedySplit(ladders, amountIn, K_CHUNKS);
+        // INVARIANT: a split is never worse than the best single venue. If greedy stops early
+        // because upper rungs are missing, part of the order is left unrouted and the split
+        // understates partitio. Route it all to the best venue instead — a partial split is a
+        // measurement failure, not a price.
+        if (bestOut !== null && split.total < bestOut) {
+          const L = ladders.find((x) => x.id === bestId);
+          split = { total: bestOut, chunk,
+            legs: [{ venue_id: bestId, family: bestFam, kind: L?.kind ?? "v3",
+                     amount_in: amountIn.toString(), amount_out: bestOut.toString(), chunks: K_CHUNKS }] };
+        }
 
         const cellIx = priced.findIndex((x) => x.ticker === ticker) * SIZES_USD.length * 2
           + SIZES_USD.indexOf(sizeUsd) * 2 + (direction === "buy" ? 1 : 0);
@@ -418,7 +452,7 @@ async function runOnce() {
 
         const kstr = (k) => k.status + (k.families ? ` hops=${k.hops} rfq=${k.rfqShare}% [${k.families.join("|")}]`
                                                   : (k.cls ? ` [${k.cls}: ${k.err ?? ""}]` : ""));
-        insAgg.run(runId, ticker, direction, sizeUsd, amountIn.toString(),
+        insAgg.run(runId, ticker, direction, sizeUsd, amountIn.toString(), transportGaps, refusedRungs,
           bestOut?.toString() ?? null, bestId, bestFam,
           bestV3?.toString() ?? null, bestV4?.toString() ?? null, bestMk?.toString() ?? null,
           split.total > 0n ? split.total.toString() : null,
