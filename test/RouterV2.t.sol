@@ -162,7 +162,7 @@ contract RouterV2Test is Test {
         PartitioRouterV2.Leg[] memory legs = _legs([uint256(amt), 0, 0, 0]);
         deal(AAPL, address(this), amt);
         IERC20(AAPL).approve(address(router), amt);
-        vm.expectRevert();                            // BelowOracleFloor
+        vm.expectPartialRevert(OracleGuard.BelowOracleFloor.selector);
         router.swapExactIn(AAPL, USDG, legs, _guard(true, 100), 0, address(this), block.timestamp + 300);
     }
 

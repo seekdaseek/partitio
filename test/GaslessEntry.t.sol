@@ -211,7 +211,7 @@ contract GaslessEntryTest is Test {
         GaslessEntry.Order memory o = _order(amt, 5e6, 1000e18, bytes32(uint256(6)));
         GaslessEntry.Auth memory a = _auth(o);
         GaslessEntry.Route memory r = _route(amt - fee, 0);
-        vm.expectRevert();
+        vm.expectPartialRevert(GaslessEntry.OutputBelowMin.selector);
         vm.prank(relayer);
         entry.fill(o, a, r, fee);
     }
@@ -224,7 +224,9 @@ contract GaslessEntryTest is Test {
         GaslessEntry.Auth memory a = _auth(o);
         a.v = a.v == 27 ? 28 : 27;               // corrupt the order signature
         vm.prank(relayer);
-        vm.expectRevert();
+        // flipping v yields a different recovered address, not an invalid signature, so the
+        // contract's own BadSignature is the right error to name here
+        vm.expectRevert(GaslessEntry.BadSignature.selector);
         entry.fill(o, a, _route(amt - fee, 0), fee);
     }
 

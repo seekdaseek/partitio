@@ -90,7 +90,7 @@ contract PartitioRouterTest is Test {
         legs[0] = PartitioRouter.Leg(V3_500, amount);
         deal(AAPL, address(this), amount);
         IERC20(AAPL).approve(address(router), amount);
-        vm.expectRevert();
+        vm.expectPartialRevert(PartitioRouter.InsufficientOutput.selector);
         router.executeSplit(AAPL, USDG, legs, type(uint256).max, address(this), block.timestamp + 300);
     }
 

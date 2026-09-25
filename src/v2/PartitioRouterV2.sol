@@ -127,7 +127,14 @@ contract PartitioRouterV2 is IUniswapV3SwapCallback, IUnlockCallback {
         if (stockTokens.length != feeds.length || stockTokens.length == 0) revert FeedMapBad();
         for (uint256 i = 0; i < stockTokens.length; i++) {
             if (stockTokens[i] == address(0) || feeds[i] == address(0)) revert FeedMapBad();
-            if (feedOf[stockTokens[i]] != address(0)) revert FeedMapBad(); // duplicate binding
+            if (feedOf[stockTokens[i]] != address(0)) revert FeedMapBad(); // duplicate token key
+            // A duplicate FEED across two different tokens is the exact miswiring that already
+            // happened on this chain once: the recon table picked "first Morpho market per ticker",
+            // which pointed CRWV at CRCL's aggregator. Deploy-time only, and the immutables are
+            // forever, so it is worth the loop.
+            for (uint256 j = 0; j < i; j++) {
+                if (feeds[j] == feeds[i]) revert FeedMapBad();
+            }
             feedOf[stockTokens[i]] = feeds[i];
         }
     }
@@ -347,6 +354,11 @@ contract PartitioRouterV2 is IUniswapV3SwapCallback, IUnlockCallback {
         // flight" shape.
         if (msg.sender != address(poolManager) || expectedHash == bytes32(0)) revert BadCallback();
         if (keccak256(data) != expectedHash) revert BadCallback();
+        // Consume the binding on ENTRY, so one `unlock` can settle exactly once. The v3 callback
+        // decrements its budget for precisely this reason - "nothing stops a pool calling back more
+        // than once inside a single swap" - and stating that threat model there while leaving this
+        // path re-entrant would be an asymmetry, not a decision.
+        assembly { tstore(su, 0) }
 
         (PoolKey memory key, bool zeroForOne, uint256 amountIn) = abi.decode(data, (PoolKey, bool, uint256));
         int256 delta = poolManager.swap(

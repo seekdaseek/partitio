@@ -170,9 +170,6 @@ contract GaslessEntry is EIP712, ReentrancyGuardTransient {
         _pullIn(o, a, oh);
 
         uint256 spendable = feeFromInput ? o.amountIn - fee : o.amountIn;
-        if (feeFromInput && fee * 10_000 > o.amountIn * MAX_FEE_BPS) {
-            revert FeeAboveMax(fee, (o.amountIn * MAX_FEE_BPS) / 10_000);
-        }
 
         // R-04: the relayer's legs must cover the whole order. Checked on the RAW legs, because
         // `_scaleLegs` rewrites them to sum to whatever it is handed — asserting the sum after
@@ -202,20 +199,37 @@ contract GaslessEntry is EIP712, ReentrancyGuardTransient {
             );
         }
 
-        // On a sell the fee comes out of the USDG leg before the user is paid.
-        if (fee != 0 && !feeFromInput) {
-            if (fee > amountOut) revert FeeAboveMax(fee, amountOut);
-            if (fee * 10_000 > amountOut * MAX_FEE_BPS) {
-                revert FeeAboveMax(fee, (amountOut * MAX_FEE_BPS) / 10_000);
-            }
-            amountOut -= fee;
-            IERC20(address(USDG)).safeTransfer(msg.sender, fee);
+        // THE FEE IS PRO RATA ON WHAT WAS ACTUALLY SPENT, and capped against the USDG side of the
+        // trade that really happened — not against the size that was merely signed.
+        //
+        // The signed cap alone is not enough, and the percentage cap on `o.amountIn` was worse than
+        // it looked. `fill` is permissionless, so any observer of a signed order is the relayer;
+        // it could route a sliver at an honest price, clear the oracle floor (which is computed on
+        // `spent`), and still collect the full signed fee. On a 1,000,000 USDG order with a
+        // 5,000 USDG cap, routing 1,000 USDG is a 500% fee on the amount transacted while passing
+        // a "0.50% of amountIn" check. Charging in proportion removes the incentive without
+        // bricking a legitimate partial fill, which a hard minimum-fill rule would have done — and
+        // a hard rule is also front-runnable: anyone can move a pool one wei to force a short fill.
+        uint256 feeDue = spendable == 0 ? 0 : (fee * spent) / spendable;
+        if (feeDue > fee) feeDue = fee;
+        // The basis is the USDG that actually changed hands for this trade: on a buy that is what
+        // was spent PLUS the fee itself, on a sell it is the gross proceeds (which are likewise net
+        // plus fee). Using bare `spent` on a buy would be circular - the fee comes off the input,
+        // so `spent` can never include it and a 0.50% cap would cap at 49.75% of itself.
+        uint256 feeBasis = feeFromInput ? spent + feeDue : amountOut;
+        if (feeDue * 10_000 > feeBasis * MAX_FEE_BPS) {
+            revert FeeAboveMax(feeDue, (feeBasis * MAX_FEE_BPS) / 10_000);
+        }
+        if (feeDue != 0 && !feeFromInput) {
+            if (feeDue > amountOut) revert FeeAboveMax(feeDue, amountOut);
+            amountOut -= feeDue;
+            IERC20(address(USDG)).safeTransfer(msg.sender, feeDue);
         }
 
         if (amountOut < o.minOut) revert OutputBelowMin(o.tokenOut, amountOut, o.minOut);
         IERC20(o.tokenOut).safeTransfer(o.owner, amountOut);
 
-        if (fee != 0 && feeFromInput) IERC20(o.tokenIn).safeTransfer(msg.sender, fee);
+        if (feeDue != 0 && feeFromInput) IERC20(o.tokenIn).safeTransfer(msg.sender, feeDue);
 
         // Forward exactly THIS order's unspent input. Measured as a delta rather than as an
         // absolute balance: an absolute sweep would hand a previous order's residue — or an
@@ -224,7 +238,7 @@ contract GaslessEntry is EIP712, ReentrancyGuardTransient {
         uint256 inAfter = IERC20(o.tokenIn).balanceOf(address(this));
         if (inAfter > inBefore) IERC20(o.tokenIn).safeTransfer(o.owner, inAfter - inBefore);
 
-        emit OrderFilled(o.owner, oh, msg.sender, o.tokenIn, o.tokenOut, spent, amountOut, fee, usedAgg);
+        emit OrderFilled(o.owner, oh, msg.sender, o.tokenIn, o.tokenOut, spent, amountOut, feeDue, usedAgg);
     }
 
     // ------------------------------------------------------------------ internals
@@ -322,13 +336,26 @@ contract GaslessEntry is EIP712, ReentrancyGuardTransient {
             // buys anything: the aggregate floor in `fill` covers both branches, so this field is
             // now purely a routing preference.
             uint256 bar = o.minOut > route.aggMinOut ? o.minOut : route.aggMinOut;
-            if (got >= bar) return (got, spent, true);
-            emit AggregatorLegRejected(route.aggregator, got, bar);
+            if (got >= bar) {
+                usedAgg = true;
+                // ACCEPTED - but accepting its PRICE is not the same as accepting its SIZE. The
+                // remainder still falls through to the router below.
+                //
+                // Returning here was a hole. The relayer writes `route.callData`, so it chooses how
+                // much the aggregator actually pulls, and `legSum == spendable` only bounds the
+                // amount OFFERED. A route that consumed a thousandth of the order at an honest
+                // price cleared the oracle floor (computed on `spent`) and the early return skipped
+                // the fallback, so the signer was filled on 0.1% of their order and their order
+                // hash was burned. Nothing else caught it: `minOut` would have, but nothing in this
+                // repo signs a non-zero one.
+            } else {
+                emit AggregatorLegRejected(route.aggregator, got, bar);
+            }
         }
 
-        // Fall back with whatever input is left. `got` and `spent` accumulate across both legs, so
-        // the aggregate guard in `fill` sees everything the aggregator consumed even when its
-        // result was rejected.
+        // Route whatever input is left, whether the aggregator's price was accepted or rejected.
+        // `got` and `spent` accumulate across both legs, so the aggregate guard in `fill` sees the
+        // whole trade either way.
         // `spendable - spent` is always actually held: this order pulled in `amountIn`, the
         // aggregator took `spent` of it, and `amountIn - spendable` is the fee reserve we must not
         // touch. Sizing from the budget rather than from `balanceOf` also means a donation cannot

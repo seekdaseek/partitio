@@ -150,7 +150,7 @@ contract GaslessSellTest is Test {
         GaslessEntry.Order memory o = _sellOrder(amt, 5e6, gross, bytes32(uint256(22)));
         GaslessEntry.Auth memory a = _sellAuth(o);
         GaslessEntry.Route memory r = _route(amt);
-        vm.expectRevert();
+        vm.expectPartialRevert(GaslessEntry.OutputBelowMin.selector);
         vm.prank(relayer);
         entry.fill(o, a, r, 1e6);
     }
