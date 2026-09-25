@@ -371,6 +371,40 @@ contract R13_V4DoubleUnlock is ReviewBase {
         return (usdgIn * 1e18 * (10 ** fd)) / (1e6 * uint256(answer));
     }
 
+    /// THE OTHER HALF OF THE V4 BOUND, and the one that had no test at all: a PoolManager that
+    /// reports owing MORE than the leg. The judge left the v4 path OPEN on exactly this - "is it
+    /// covered by the same reasoning as R-07/R-08, or is it still exposed?" - because the only v4
+    /// coverage was a happy path and a re-entry.
+    ///
+    /// WHAT THE NEGATIVE CONTROL SHOWED. Deleting `unlockCallback`'s `owedAbs > amountIn` bound
+    /// does NOT let the pool keep the money: `_execute`'s measured-consumption check catches it
+    /// and reverts with LegOverdraw. The two bounds are not redundant, they fail differently. The
+    /// inner one reverts INSIDE `_execute`'s try/catch, so one greedy pool fails its own leg and
+    /// the rest of the route still settles; the outer one reverts after the catch and takes the
+    /// whole swap down with it. So the inner bound is availability, not custody - a single
+    /// misbehaving committed pool must not be able to brick every other leg in the order.
+    function test_H3_v4PoolDemandingMoreThanTheLegIsRefused() public {
+        uint256 amt = 100e6;
+        uint256 give = (_oracleAaplAt(amt) * 9_990) / 10_000;
+        pm.arm(amt * 10, give);                       // the pool claims ten times the leg
+        deal(AAPL, address(pm), give);
+        deal(USDG, address(v4router), 900e6);         // residue a greedy pool would love
+        deal(USDG, address(this), amt);
+        IERC20(USDG).approve(address(v4router), amt);
+
+        PartitioRouterV2.Leg[] memory legs = new PartitioRouterV2.Leg[](1);
+        legs[0] = PartitioRouterV2.Leg(v4venue, new bytes32[](0), amt);
+
+        vm.expectPartialRevert(PartitioRouterV2.NothingRouted.selector);
+        v4router.swapExactIn(
+            USDG, AAPL, legs, OracleGuard.Params({maxDevBps: 2000, maxFeedAge: 120 hours}),
+            0, address(this), block.timestamp + 300
+        );
+
+        assertEq(IERC20(USDG).balanceOf(address(pm)), 0, "the greedy pool drew nothing");
+        assertEq(IERC20(USDG).balanceOf(address(v4router)), 900e6, "and the unrelated residue is intact");
+    }
+
     /// Calling the callback directly, outside any unlock, is still refused.
     function test_H3_unlockCallbackOutsideAnUnlockIsRefused() public {
         vm.prank(address(pm));

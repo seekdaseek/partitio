@@ -7,6 +7,7 @@ import {OracleGuard} from "../../src/v2/OracleGuard.sol";
 import {PartitioRouterV2} from "../../src/v2/PartitioRouterV2.sol";
 import {ShortFillPair} from "./Mocks.sol";
 import {IUSDG} from "../../src/v2/IUSDG.sol";
+import {GuardHarness} from "./GuardHarness.sol";
 import {IPoolManager} from "../../src/interfaces/IPoolManager.sol";
 import {IERC20} from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 
@@ -293,6 +294,23 @@ contract R14_FinalBatch is ReviewBase {
         assertGt(net, 0, "a small sell must not be unfillable for arithmetic reasons");
         // the fee really was a meaningful slice of the proceeds, so this is not a vacuous pass
         assertGt(fee * 10_000 / (net + fee), 20, "the fee should be >20 bps of proceeds here");
+
+        // THE DISCRIMINATING HALF, and the reason the judge called the old version decoration:
+        // "a small sell fills" is true under BOTH conventions whenever the market happens to leave
+        // enough headroom, so it proves nothing about which convention is in force. The claim is
+        // about the guard, so it is asserted at the guard, with no market in it at all: a fill
+        // sitting exactly on the gross floor is ACCEPTED, and the same trade net of its fee is
+        // REJECTED. That gap is the entire difference between the two conventions, and MAX_FEE_BPS
+        // (50) being smaller than the app's band (200) is what keeps it from being a licence.
+        GuardHarness h = new GuardHarness();
+        OracleGuard.Params memory gp = OracleGuard.Params({maxDevBps: 200, maxFeedAge: 120 hours});
+        (uint256 ref,) = h.oracleOut(AAPL_FEED, true, amt, 18, 6);
+        uint256 floorOut = (ref * 9_800) / 10_000;
+        uint256 feeAtCap = (floorOut * entry.MAX_FEE_BPS()) / 10_000;
+
+        h.enforce(gp, AAPL_FEED, true, amt, floorOut, 18, 6);            // gross: accepted
+        vm.expectPartialRevert(OracleGuard.BelowOracleFloor.selector);
+        h.enforce(gp, AAPL_FEED, true, amt, floorOut - feeAtCap, 18, 6); // net: rejected
     }
 
     function _oracleUsdg(uint256 stockIn) internal view returns (uint256) {
