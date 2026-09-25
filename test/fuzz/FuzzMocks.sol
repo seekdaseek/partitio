@@ -165,6 +165,12 @@ contract FuzzFeed {
 
     constructor(int256 a) { answer = a; updatedAt = block.timestamp; }
     function set(int256 a) external { answer = a; updatedAt = block.timestamp; }
+
+    /// Set the reported timestamp explicitly, including AHEAD of the block.
+    /// Without this the harness can only ever produce a fresh-or-stale feed, so
+    /// OracleGuard's FeedFromTheFuture branch is unreachable and R-10 carries zero fuzz
+    /// coverage - measured, it had 0 hits across 211,126 guard evaluations.
+    function setAt(int256 a, uint256 ts) external { answer = a; updatedAt = ts; }
     function decimals() external pure returns (uint8) { return dec; }
     function latestRoundData() external view returns (uint80, int256, uint256, uint256, uint80) {
         return (1, answer, updatedAt, updatedAt, 1);

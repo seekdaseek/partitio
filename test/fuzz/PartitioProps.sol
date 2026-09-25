@@ -101,6 +101,17 @@ contract PartitioProps {
 
     function h_setPrice(uint64 p) public { feed.set(int256(uint256(p % 1e12) + 1e8)); }
 
+    /// Walk the feed's reported timestamp across the whole range the guard cares about: well
+    /// stale, ordinary, and AHEAD of the block. The last case is the only way to reach
+    /// OracleGuard.FeedFromTheFuture from this harness.
+    function h_setFeedAge(int32 skew) public {
+        int256 s = int256(skew) % int256(int32(11 days));
+        int256 ts = int256(block.timestamp) + s;
+        if (ts < 1) ts = 1;
+        (, int256 a,,,) = feed.latestRoundData();
+        feed.setAt(a, uint256(ts));
+    }
+
     function h_donateToEntry(uint64 amt, bool isStock) public {
         uint256 a = uint256(amt) % 1e9 + 1;
         if (isStock) { stock.mint(address(this), a); stock.transfer(address(entry), a); donatedStockToEntry += a; }

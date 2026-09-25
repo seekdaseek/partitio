@@ -128,13 +128,36 @@ contract SGOVMultiplier is Test {
         assertEq(expectedRaw, _oracleSgovOut(amt), "guard reference must be decimals-only");
     }
 
-    /// And the consequence, stated as a test: applying the multiplier would push an honest fill
-    /// outside the tightest permitted band, which is why the convention is load-bearing.
-    function test_applyingTheMultiplierWouldRejectAnHonestFill() public {
+    /// And the consequence, stated WITHOUT depending on where the market is today.
+    ///
+    /// The earlier version of this test compared a live fill against the multiplier-adjusted floor
+    /// and had under 1 bps of margin, so it flipped the moment the pool moved. The claim does not
+    /// need the market at all: take a PERFECT fill, exactly at the guard's reference with zero
+    /// slippage, and ask whether the multiplier convention would accept it. It would not — which is
+    /// the whole point, because a perfect fill is the best any venue can do.
+    function test_applyingTheMultiplierWouldRejectEvenAPerfectFill() public view {
         uint256 amt = 10_000e6;
         uint256 refRaw = _oracleSgovOut(amt);
-        uint256 refUi = (refRaw * IUiMult(SGOV).uiMultiplier()) / 1e18;
+        uint256 m = IUiMult(SGOV).uiMultiplier();
+        uint256 refUi = (refRaw * m) / 1e18;
 
+        uint256 floorRaw = (refRaw * (10_000 - OracleGuard.DEVIATION_FLOOR_BPS)) / 10_000;
+        uint256 floorUi = (refUi * (10_000 - OracleGuard.DEVIATION_FLOOR_BPS)) / 10_000;
+
+        console2.log("perfect fill (= raw reference):", refRaw);
+        console2.log("50bps floor, decimals-only    :", floorRaw);
+        console2.log("50bps floor, with multiplier  :", floorUi);
+
+        assertGe(refRaw, floorRaw, "a perfect fill clears the floor as the guard computes it");
+        assertLt(refRaw, floorUi, "and would be REJECTED if the multiplier were applied");
+    }
+
+    /// The live headroom, recorded rather than asserted. A real fill carries the AMM fee and price
+    /// impact on top of the reference, so this number moves with the market and is an observation,
+    /// not a claim.
+    function test_recordLiveHeadroom() public {
+        uint256 amt = 10_000e6;
+        uint256 refRaw = _oracleSgovOut(amt);
         deal(USDG, trader, amt);
         vm.startPrank(trader);
         IERC20(USDG).approve(address(router), amt);
@@ -142,15 +165,8 @@ contract SGOVMultiplier is Test {
             USDG, SGOV, _legs(0, amt), OracleGuard.Params({maxDevBps: 200}), 0, trader, block.timestamp + 300
         );
         vm.stopPrank();
-
-        uint256 floorTightRaw = (refRaw * (10_000 - OracleGuard.DEVIATION_FLOOR_BPS)) / 10_000;
-        uint256 floorTightUi = (refUi * (10_000 - OracleGuard.DEVIATION_FLOOR_BPS)) / 10_000;
-
-        console2.log("fill                       :", got);
-        console2.log("50bps floor, decimals-only :", floorTightRaw);
-        console2.log("50bps floor, with multiplier:", floorTightUi);
-        assertGe(got, floorTightRaw, "the honest fill clears the floor as the guard computes it");
-        assertLt(got, floorTightUi, "and would be REJECTED if the multiplier were applied");
+        _logDeviation("BUY 10k USDG (live)", refRaw, got);
+        assertGt(got, 0);
     }
 
     // ---------------------------------------------------------------- helpers

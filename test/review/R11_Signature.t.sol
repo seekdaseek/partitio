@@ -3,6 +3,8 @@ pragma solidity ^0.8.26;
 
 import {ReviewBase, console2} from "./ReviewBase.sol";
 import {GaslessEntry} from "../../src/v2/GaslessEntry.sol";
+import {ECDSA} from "@openzeppelin/contracts/utils/cryptography/ECDSA.sol";
+import {IERC20Errors} from "@openzeppelin/contracts/interfaces/draft-IERC6093.sol";
 import {OracleGuard} from "../../src/v2/OracleGuard.sol";
 import {PartitioRouterV2} from "../../src/v2/PartitioRouterV2.sol";
 import {IUSDG} from "../../src/v2/IUSDG.sol";
@@ -118,7 +120,7 @@ contract R11_Signature is ReviewBase {
         a.v = a.v == 27 ? 28 : 27;
         GaslessEntry.Route memory r = _routerRoute(amt - 1e6);
         vm.prank(relayer);
-        vm.expectRevert(); // ECDSAInvalidSignatureS
+        vm.expectPartialRevert(ECDSA.ECDSAInvalidSignatureS.selector);
         entry.fill(o, a, r, 1e6);
     }
 
@@ -131,7 +133,9 @@ contract R11_Signature is ReviewBase {
         GaslessEntry.Auth memory a = _auth(o);
         bytes32 oh = entry.hashOrder(o);
 
-        // an outsider replaying the authorization directly against USDG
+        // An outsider replaying the authorization directly against USDG. Bare on purpose: the
+        // revert comes from the USDG diamond, whose error type is not ours to name. The state
+        // assertion at the end of this test is what actually carries the claim.
         vm.prank(attacker);
         vm.expectRevert();
         IUSDG(USDG).receiveWithAuthorization(user, address(entry), amt, 0, o.deadline, oh, a.pv, a.pr, a.ps);
@@ -139,6 +143,8 @@ contract R11_Signature is ReviewBase {
         // a second GaslessEntry cannot use it either: the order hash embeds the verifying contract
         GaslessEntry other = new GaslessEntry(IUSDG(USDG), router, [KYBER_ROUTER, address(0), address(0), address(0)]);
         GaslessEntry.Route memory r = _routerRoute(amt - 1e6);
+        // Bare on purpose, same reason: USDG rejects the authorization because its nonce is the
+        // OTHER contract's order hash, and that error belongs to the diamond.
         vm.prank(relayer);
         vm.expectRevert();
         other.fill(o, a, r, 1e6);
@@ -198,7 +204,7 @@ contract R11_Signature is ReviewBase {
 
         // the relayer fills B first - a free choice, nothing in either order forbids it
         vm.prank(relayer);
-        vm.expectRevert(); // ERC20InsufficientAllowance after the swallowed permit failure
+        vm.expectPartialRevert(IERC20Errors.ERC20InsufficientAllowance.selector); // after the swallowed permit
         entry.fill(oB, aB, r, 1e6);
 
         // and A still works, which pins the cause on ordering rather than on order B being invalid

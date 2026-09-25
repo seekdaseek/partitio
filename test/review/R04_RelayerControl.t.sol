@@ -140,7 +140,7 @@ contract R04_RelayerControl is ReviewBase {
         GaslessEntry.Auth memory a = _auth(o);
 
         vm.prank(relayer);
-        vm.expectRevert(PartitioRouterV2.TokenNotInVenue.selector);
+        vm.expectPartialRevert(PartitioRouterV2.TokenNotInVenue.selector);
         entry.fill(o, a, r, fee);
         assertEq(IERC20(AMZN).balanceOf(address(router)), 0, "no AMZN should ever have been bought");
     }

@@ -63,7 +63,7 @@ contract R09_OracleGuard is Test {
         assertGt(out2, 0, "exactly at the tolerance is still alive");
 
         MockFeed bad = new MockFeed(100e8, block.timestamp + 5 minutes + 1, 8);
-        vm.expectRevert();
+        vm.expectPartialRevert(OracleGuard.FeedFromTheFuture.selector);
         h.oracleOut(address(bad), true, 1e18, D18, D6);
     }
 
@@ -89,7 +89,7 @@ contract R09_OracleGuard is Test {
         MockFeed f = new MockFeed(100e8, block.timestamp - 120 hours, 8);
         h.oracleOut(address(f), true, 1e18, D18, D6); // exactly 120h: still alive
         f.set(100e8, block.timestamp - 120 hours - 1);
-        vm.expectRevert();
+        vm.expectPartialRevert(OracleGuard.FeedDead.selector);
         h.oracleOut(address(f), true, 1e18, D18, D6);
     }
 

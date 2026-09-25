@@ -215,7 +215,7 @@ contract R06_RouterStranding is Test {
         deal(USDG, trader, amt);
         vm.startPrank(trader);
         IERC20(USDG).approve(address(router), amt);
-        vm.expectRevert(PartitioRouterV2.NothingRouted.selector);
+        vm.expectPartialRevert(PartitioRouterV2.NothingRouted.selector);
         router.swapExactIn(USDG, AAPL, _legs1(0, amt), _guard(2000), 0, trader, block.timestamp + 300);
         vm.stopPrank();
 
@@ -234,7 +234,7 @@ contract R06_RouterStranding is Test {
         deal(USDG, trader, amt);
         vm.startPrank(trader);
         IERC20(USDG).approve(address(router), amt);
-        vm.expectRevert(PartitioRouterV2.NothingRouted.selector);
+        vm.expectPartialRevert(PartitioRouterV2.NothingRouted.selector);
         router.swapExactIn(USDG, AAPL, _legs1(3, amt), _guard(2000), 0, trader, block.timestamp + 300);
         vm.stopPrank();
 

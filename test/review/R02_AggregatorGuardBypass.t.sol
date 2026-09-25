@@ -49,7 +49,7 @@ contract R02_AggregatorGuardBypass is ReviewBase {
         });
 
         vm.prank(relayer);
-        vm.expectRevert(); // OracleGuard.BelowOracleFloor
+        vm.expectPartialRevert(OracleGuard.BelowOracleFloor.selector);
         entry.fill(o, a, r, fee);
 
         assertEq(IERC20(USDG).balanceOf(user), amt, "user must keep their funds");
@@ -78,7 +78,7 @@ contract R02_AggregatorGuardBypass is ReviewBase {
         });
 
         vm.prank(relayer);
-        vm.expectRevert(); // BelowOracleFloor on (full spend, half the proceeds)
+        vm.expectPartialRevert(OracleGuard.BelowOracleFloor.selector); // full spend, half the proceeds
         entry.fill(o, a, r, fee);
         assertEq(IERC20(USDG).balanceOf(user), amt, "user must keep their funds");
     }
@@ -103,7 +103,7 @@ contract R02_AggregatorGuardBypass is ReviewBase {
         });
 
         vm.prank(relayer);
-        vm.expectRevert();
+        vm.expectPartialRevert(OracleGuard.BelowOracleFloor.selector);
         entry.fill(o, a, r, fee);
         assertEq(IERC20(USDG).balanceOf(user), amt, "user must keep their funds");
     }
@@ -183,7 +183,7 @@ contract R02_AggregatorGuardBypass is ReviewBase {
         uint256 amt = 4000e18; // dumping 4000 AAPL through one thin pool loses ~78%
         deal(AAPL, address(this), amt);
         IERC20(AAPL).approve(address(router), amt);
-        vm.expectRevert(); // OracleGuard.BelowOracleFloor
+        vm.expectPartialRevert(OracleGuard.BelowOracleFloor.selector);
         router.swapExactIn(
             AAPL, USDG, _legs1(0, amt), OracleGuard.Params({maxDevBps: 2000}), 0,
             address(this), block.timestamp + 300
