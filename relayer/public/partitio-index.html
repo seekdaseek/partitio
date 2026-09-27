@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>partitio — never worse than the best pool</title>
+<title>partitio: never worse than the best pool</title>
 <meta name="description" content="Tokenized stocks on Robinhood Chain at the best single pool's price or better: split when it pays, checked against Chainlink on-chain, no ETH needed.">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
@@ -60,6 +60,10 @@ button{font:600 15px var(--sans);border:0;border-radius:12px;cursor:pointer}
 .btn-ghost{background:var(--card);color:var(--ink);border:1px solid var(--line);padding:8px 14px;font-size:14px}
 h1{font:400 36px/1.12 var(--serif);letter-spacing:-.015em;margin:0 0 8px}
 .lede{color:var(--mut);margin:0 0 8px}
+.headline{color:var(--ink);font-size:16px;margin-bottom:4px}
+.headline b{color:var(--go);font-weight:600}
+.caveat{font-size:12.5px;color:var(--mut);margin:0 0 12px}
+.caveat a{color:var(--mut)}
 .chips{display:flex;flex-wrap:wrap;gap:6px;margin:0 0 20px}
 .chip{font-size:12.5px;color:var(--mut);border:1px solid var(--line);border-radius:999px;padding:3px 10px;background:var(--card)}
 .card{background:var(--card);border:1px solid var(--line);border-radius:18px;box-shadow:var(--shadow);padding:18px}
@@ -136,7 +140,8 @@ h1{font:400 36px/1.12 var(--serif);letter-spacing:-.015em;margin:0 0 8px}
   </header>
 
   <h1>Never worse than the best pool.</h1>
-  <p class="lede">partitio quotes every committed pool for a stock and splits your order when that beats the best single one. The price is checked against Chainlink inside the contract before anything fills.</p>
+  <p class="lede headline">A $100,000 stock-token order on Robinhood Chain sent to the best single pool left a median <b>$199</b> on the table in <b>6,329 of 7,493</b> executable quotes. partitio splits it and floors the fill against Chainlink.</p>
+  <p class="caveat">Quoted, not executed · the beta caps trades at $50 · runs 1–246, Sep 24–27, 2026 · <a href="https://github.com/seekdaseek/partitio/blob/main/evidence/headline.mjs" target="_blank" rel="noopener">query: evidence/headline.mjs</a></p>
   <div class="chips">
     <span class="chip">Split only when it pays</span>
     <span class="chip">Chainlink-floored on-chain</span>
@@ -314,7 +319,12 @@ h1{font:400 36px/1.12 var(--serif);letter-spacing:-.015em;margin:0 0 8px}
     const sv = BigInt(q.savingsUsdg || "0"), gb = q.splitGainBps;
     let vs;
     if (!q.bestSingle?.name) vs = `<span class="flat">no single pool quotes this size</span>`;
-    else if (sv > 0n) vs = `<span class="up">+${usd(sv)}</span> <span class="flat">(+${(Number(sv) * 1e4 / Number(buy ? q.amountIn : q.expectedOut)).toFixed(2)} bps)</span><span class="sub">vs ${q.bestSingle.name} alone</span>`;
+    else if (sv > 0n) {
+      const keep = sv - BigInt(q.fee.total || "0");
+      const keepTxt = keep >= 0n ? `<span class="up">+${usd(keep)}</span>` : `<span class="down">−${usd(-keep)}</span>`;
+      vs = `<span class="up">+${usd(sv)}</span> <span class="flat">(+${(Number(sv) * 1e4 / Number(buy ? q.amountIn : q.expectedOut)).toFixed(2)} bps)</span>` +
+        `<span class="sub">vs ${q.bestSingle.name} alone</span><span class="sub">you keep ${keepTxt} after the fee</span>`;
+    }
     else vs = `<span class="flat">same price — ${q.bestSingle.name} alone is best at this size</span>`;
 
     // the Chainlink check
@@ -329,13 +339,15 @@ h1{font:400 36px/1.12 var(--serif);letter-spacing:-.015em;margin:0 0 8px}
     // the fee: route gas in USDG, plus the share of savings when there is one
     const f = q.fee;
     const hasShare = BigInt(f.savingsShareUsdg || "0") > 0n;
-    let share = "", capped = "";
-    if (f.cappedBy) {
-      // when the cap binds, show what it capped rather than a breakdown bigger than the total
-      capped = `<span class="sub">gas ${usd(f.gasUsdg)}${hasShare ? ` + ${f.savingsSharePct}% of savings ${usd(f.savingsShareUsdg)}` : ""}, capped at ${f.cappedBy}</span>`;
-    } else if (hasShare) {
-      share = `<span class="sub">gas ${usd(f.gasUsdg)} + ${usd(f.savingsShareUsdg)} = ${f.savingsSharePct}% of what the split saved</span>`;
-    }
+    const whole = (u) => (Number(u) % 1e6 === 0 ? "$" + (Number(u) / 1e6) : usd(u));
+    const capTxt = f.cappedBy === "the maximum fee" ? whole(f.total) : f.cappedBy;
+    // the label names what the fee is made of: when most of it is the savings share, say so
+    const feeLabel = hasShare
+      ? `gas + ${f.savingsSharePct}% of what the split saved${f.cappedBy ? `, capped at ${capTxt}` : ""}`
+      : `network gas for this route, paid in USDG${f.cappedBy ? `, capped at ${capTxt}` : ""}`;
+    const feeDetail = hasShare
+      ? `<span class="sub">gas ${usd(f.gasUsdg)} · share ${usd(f.savingsShareUsdg)}${f.cappedBy ? " before the cap" : ""}</span>`
+      : "";
 
     el.innerHTML = `
       <div class="recv"><span>You receive about</span><span class="big">${fmt(q.expectedOut, outDec, buy ? 6 : 2)} ${sym}</span></div>
@@ -343,7 +355,7 @@ h1{font:400 36px/1.12 var(--serif);letter-spacing:-.015em;margin:0 0 8px}
       <div class="legend">${legend}</div>
       <div class="kv" style="margin-top:8px"><span>vs the best single pool</span><span class="v">${vs}</span></div>
       <div class="kv"><span>Chainlink check</span><span class="v"><span class="badge ${cls}">${words}</span>${market}${feedAge}</span></div>
-      <div class="kv"><span>Fee</span><span class="v"><span class="num">${usd(f.total)}</span><span class="sub">network gas for this route, paid in USDG</span>${share}${capped}</span></div>
+      <div class="kv"><span>Fee</span><span class="v"><span class="num">${usd(f.total)}</span><span class="sub">${feeLabel}</span>${feeDetail}</span></div>
       <div class="kv"><span>Gas</span><span class="v">paid by the relayer<span class="sub">you need 0 ETH</span></span></div>`;
   }
 
