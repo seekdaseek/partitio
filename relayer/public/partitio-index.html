@@ -130,7 +130,7 @@ h1{font:400 36px/1.12 var(--serif);letter-spacing:-.015em;margin:0 0 8px}
   <header>
     <div class="brand">partitio<i>.</i></div>
     <div class="row" style="align-items:center">
-      <span class="pill"><span class="dot" id="netdot"></span><span class="long">Robinhood Chain · </span><span id="nettext">…</span></span>
+      <span class="pill"><span class="dot" id="netdot"></span><span><span class="long">Robinhood Chain · </span><span id="nettext">…</span></span></span>
       <button class="btn-ghost" id="connect">Connect</button>
     </div>
   </header>
@@ -151,7 +151,7 @@ h1{font:400 36px/1.12 var(--serif);letter-spacing:-.015em;margin:0 0 8px}
     <div class="row">
       <div class="field" style="flex:1.4">
         <label id="amtLabel">You pay (USDG)</label>
-        <input id="amt" inputmode="decimal" value="1000" autocomplete="off">
+        <input id="amt" inputmode="decimal" value="50" autocomplete="off">
       </div>
       <div class="field">
         <label>Stock</label>
@@ -425,7 +425,7 @@ h1{font:400 36px/1.12 var(--serif);letter-spacing:-.015em;margin:0 0 8px}
     st.side = s; $("sBuy").classList.toggle("on", s === "buy"); $("sSell").classList.toggle("on", s === "sell");
     $("amtLabel").textContent = s === "buy" ? "You pay (USDG)" : `You sell (${$("ticker").value})`;
     if (s === "sell") $("amt").value = st.bal?.stock ? fmt(st.bal.stock, 18, 18).replace(/,/g, "") : "1";
-    else $("amt").value = "1000";
+    else $("amt").value = "50";
     balances(); schedule();
   }
 
