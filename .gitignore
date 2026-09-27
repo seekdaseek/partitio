@@ -3,6 +3,14 @@
 .env.*
 *.key
 *.pem
+# the relayer reads these from its own directory on the VPS; none may ever reach git
+relayer/hotkey
+relayer/hotkey*
+relayer/qn_rpc
+relayer/zerox_key
+relayer/ip_salt
+relayer/*.db
+relayer/*.db-*
 
 # foundry
 cache/
@@ -35,3 +43,6 @@ crytic-export/
 # tool output
 slither_results.json
 crytic-export/
+
+# local preview config (points at scratch paths)
+.claude/launch.json

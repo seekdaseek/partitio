@@ -35,8 +35,12 @@ const padInt24 = (n) => { const b = BigInt(n); return pad((b < 0n ? (1n << 256n)
 const w = (v, i) => v.replace(/^0x/, "").slice(i * 64, (i + 1) * 64);
 const lower = (a) => String(a).toLowerCase();
 
+// Offered = a bound feed AND at least one venue in the deployed root. RGTI has a feed and no
+// committed venue; listing it would only ever answer "no route".
 export function tickers() {
-  return Object.keys(TOK.tokens).filter((t) => !HIDDEN.has(t) && FEEDS[t]);
+  const c = committed();
+  const routable = c ? new Set(c.venues.map((v) => v.ticker)) : null;
+  return Object.keys(TOK.tokens).filter((t) => !HIDDEN.has(t) && FEEDS[t] && (!routable || routable.has(t)));
 }
 
 // Only venues committed in the deployed router's VENUE_ROOT may be quoted. A venue outside the root

@@ -1,0 +1,348 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>partitio — stocks without gas</title>
+<meta name="description" content="Buy and sell tokenized stocks on Robinhood Chain with one wallet and zero ETH. Split across venues, floored by Chainlink.">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=Newsreader:ital,opsz,wght@0,6..72,400;0,6..72,500;1,6..72,400&display=swap" rel="stylesheet">
+<style>
+:root{
+  --bg:#F5F2EC; --bg2:#EDE9E0; --card:#FFFFFF; --sunk:#FAF8F4;
+  --line:#E4DFD4; --line2:#F0ECE4;
+  --ink:#16181C; --mut:#6B7180; --dim:#9A9DA6;
+  --go:#06795A; --go-bg:#E4F2EC;
+  --no:#C0392F; --no-bg:#FBEAE7;
+  --warn:#A86400; --warn-bg:#FBF0DC;
+  --bar:#D9D4C8;
+  --shadow:0 1px 2px rgba(20,18,14,.05), 0 18px 40px -28px rgba(20,18,14,.45);
+  --sans:"Inter",-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif;
+  --serif:"Newsreader",Georgia,"Times New Roman",serif;
+  --mono:ui-monospace,SFMono-Regular,"SF Mono",Menlo,Consolas,monospace;
+}
+@media (prefers-color-scheme: dark){
+  :root:not([data-theme="light"]){
+    --bg:#131211; --bg2:#0D0C0B; --card:#1C1B19; --sunk:#232120;
+    --line:#302D2A; --line2:#262421;
+    --ink:#F1EEE8; --mut:#A09A91; --dim:#6E6862;
+    --go:#42C79B; --go-bg:#0E2A22;
+    --no:#FF8272; --no-bg:#2E1512;
+    --warn:#E0A63F; --warn-bg:#2C2110;
+    --bar:#343029;
+    --shadow:0 1px 2px rgba(0,0,0,.4), 0 20px 48px -30px rgba(0,0,0,.9);
+  }
+}
+*{box-sizing:border-box}
+html,body{margin:0}
+body{background:var(--bg);color:var(--ink);font:15px/1.5 var(--sans);-webkit-font-smoothing:antialiased}
+a{color:inherit}
+.wrap{max-width:560px;margin:0 auto;padding:20px 16px 48px}
+header{display:flex;align-items:center;justify-content:space-between;gap:12px;margin-bottom:28px}
+.brand{font:500 26px/1 var(--serif);letter-spacing:-.01em}
+.brand i{color:var(--mut);font-style:italic}
+.pill{display:inline-flex;align-items:center;gap:6px;border:1px solid var(--line);background:var(--card);
+  border-radius:999px;padding:6px 12px;font-size:13px;color:var(--mut);white-space:nowrap}
+.dot{width:7px;height:7px;border-radius:50%;background:var(--dim)}
+.dot.on{background:var(--go)}
+button{font:600 15px var(--sans);border:0;border-radius:12px;cursor:pointer}
+.btn-ghost{background:var(--card);color:var(--ink);border:1px solid var(--line);padding:8px 14px;font-size:14px}
+h1{font:400 34px/1.15 var(--serif);letter-spacing:-.015em;margin:0 0 8px}
+.lede{color:var(--mut);margin:0 0 22px}
+.card{background:var(--card);border:1px solid var(--line);border-radius:18px;box-shadow:var(--shadow);padding:18px}
+.side{display:grid;grid-template-columns:1fr 1fr;background:var(--sunk);border:1px solid var(--line2);border-radius:12px;padding:4px;margin-bottom:14px}
+.side button{background:transparent;color:var(--mut);padding:9px}
+.side button.on{background:var(--card);color:var(--ink);box-shadow:0 1px 2px rgba(0,0,0,.08)}
+.row{display:flex;gap:10px}
+.field{flex:1;border:1px solid var(--line);border-radius:12px;padding:10px 12px;background:var(--sunk)}
+.field label{display:block;font-size:12px;color:var(--mut);margin-bottom:2px}
+.field input,.field select{width:100%;border:0;background:transparent;color:var(--ink);font:600 22px var(--sans);outline:none;padding:0}
+.field select{font-size:18px;cursor:pointer}
+.hold{display:flex;flex-wrap:wrap;gap:6px 14px;font-size:13px;color:var(--mut);margin:10px 2px 14px}
+.hold b{color:var(--ink);font-weight:600}
+.hold .zero b{color:var(--go)}
+.link{background:none;padding:0;color:var(--go);font:inherit;font-weight:600}
+.primary{width:100%;background:var(--ink);color:var(--bg);padding:14px;margin-top:14px}
+.primary:disabled{opacity:.45;cursor:not-allowed}
+.quote{border-top:1px solid var(--line2);margin-top:14px;padding-top:12px;display:none}
+.kv{display:flex;justify-content:space-between;gap:12px;font-size:14px;padding:3px 0}
+.kv span:first-child{color:var(--mut)}
+.kv .num{font-family:var(--mono);font-size:13px}
+.big{font:500 30px/1.1 var(--serif)}
+.legs{margin:10px 0 6px}
+.leg{display:grid;grid-template-columns:92px 1fr 64px;align-items:center;gap:8px;font-size:12px;color:var(--mut);margin:5px 0}
+.leg .bar{height:8px;background:var(--line2);border-radius:5px;overflow:hidden}
+.leg .bar i{display:block;height:100%;background:var(--go)}
+.leg .pct{text-align:right;font-family:var(--mono)}
+.note{border-radius:12px;padding:10px 12px;font-size:14px;margin-top:12px;display:none}
+.note.go{display:block;background:var(--go-bg);color:var(--go)}
+.note.no{display:block;background:var(--no-bg);color:var(--no)}
+.note.warn{display:block;background:var(--warn-bg);color:var(--warn)}
+.steps{list-style:none;margin:14px 0 0;padding:0;display:none}
+.steps li{display:flex;gap:10px;align-items:flex-start;padding:7px 0;color:var(--dim);font-size:14px}
+.steps li.now{color:var(--ink)}
+.steps li.done{color:var(--go)}
+.steps li .n{flex:0 0 22px;height:22px;border-radius:50%;border:1px solid currentColor;display:grid;place-items:center;font-size:12px}
+.foot{margin-top:26px;font-size:12.5px;color:var(--mut);line-height:1.7}
+.foot code{font-family:var(--mono);font-size:12px;color:var(--ink)}
+.foot a{color:var(--mut)}
+@media (max-width:420px){ h1{font-size:28px} .big{font-size:26px} .leg{grid-template-columns:78px 1fr 52px} }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <header>
+    <div class="brand">partitio<i>.</i></div>
+    <div class="row" style="align-items:center">
+      <span class="pill" id="net"><span class="dot" id="netdot"></span><span id="nettext">Robinhood Chain</span></span>
+      <button class="btn-ghost" id="connect">Connect</button>
+    </div>
+  </header>
+
+  <h1>Stocks, with no gas.</h1>
+  <p class="lede">Hold USDG, sign twice, own the stock. A relayer pays the network fee; the price is split across every pool that can take it and floored by Chainlink.</p>
+
+  <div class="card">
+    <div class="side">
+      <button id="sBuy" class="on">Buy</button>
+      <button id="sSell">Sell</button>
+    </div>
+    <div class="row">
+      <div class="field" style="flex:1.4">
+        <label id="amtLabel">You pay (USDG)</label>
+        <input id="amt" inputmode="decimal" value="1" autocomplete="off">
+      </div>
+      <div class="field">
+        <label>Stock</label>
+        <select id="ticker"></select>
+      </div>
+    </div>
+    <div class="hold" id="hold">Connect a wallet to see balances.</div>
+
+    <div class="quote" id="quote">
+      <div class="kv"><span id="outLabel">You receive about</span><span class="big" id="out">—</span></div>
+      <div class="kv"><span>At least (signed)</span><span class="num" id="minout">—</span></div>
+      <div class="kv"><span>Relayer fee</span><span class="num" id="fee">—</span></div>
+      <div class="kv"><span>Chainlink reference</span><span class="num" id="dev">—</span></div>
+      <div class="legs" id="legs"></div>
+      <div class="kv"><span>vs the best single pool</span><span class="num" id="gain">—</span></div>
+    </div>
+
+    <div class="note" id="note"></div>
+    <ol class="steps" id="steps">
+      <li id="st1"><span class="n">1</span><span>Sign the order — what to trade, the floor, the fee cap</span></li>
+      <li id="st2"><span class="n">2</span><span id="st2t">Authorize the funds — this order only</span></li>
+      <li id="st3"><span class="n">3</span><span>Relayer fills it on-chain and pays the gas</span></li>
+    </ol>
+    <button class="primary" id="go" disabled>Connect a wallet</button>
+  </div>
+
+  <div class="foot" id="foot">
+    Router <a id="aRouter" target="_blank" rel="noopener"><code>—</code></a> ·
+    GaslessEntry <a id="aEntry" target="_blank" rel="noopener"><code>—</code></a><br>
+    Ownerless and immutable, source verified on Sourcify. Every fill is floored against Chainlink
+    inside the contract; a price outside the band reverts instead of filling. No ETH is ever needed
+    in your wallet.
+  </div>
+</div>
+
+<script>
+(() => {
+  const CHAIN_ID = 4663, CHAIN_HEX = "0x1237";
+  const EXPLORER = "https://explorer.mainnet.chain.robinhood.com";
+  const USDG = "0x5fc5360D0400a0Fd4f2af552ADD042D716F1d168";
+  const $ = (id) => document.getElementById(id);
+  const st = { side: "buy", account: null, health: null, tokens: {}, prepared: null, busy: false, dev: false };
+
+  // ---------------------------------------------------------------- wallet
+  // The development shim exists ONLY when the relayer itself reports it is running against a local
+  // anvil fork; the server does not serve its endpoint otherwise.
+  async function devShim() {
+    const r = await fetch("/__dev/wallet", { method: "POST", headers: { "content-type": "application/json" },
+      body: JSON.stringify({ method: "eth_accounts", params: [] }) }).catch(() => null);
+    if (!r || !r.ok) return null;
+    return { request: async ({ method, params }) => {
+      const x = await fetch("/__dev/wallet", { method: "POST", headers: { "content-type": "application/json" },
+        body: JSON.stringify({ method, params: params ?? [] }) });
+      const j = await x.json();
+      if (j.error) throw new Error(j.error);
+      return j.result;
+    }, isDev: true };
+  }
+  const eth = () => window.__partitioProvider || window.ethereum;
+
+  async function ensureChain() {
+    const cid = await eth().request({ method: "eth_chainId" });
+    if (cid === CHAIN_HEX) return;
+    try {
+      await eth().request({ method: "wallet_switchEthereumChain", params: [{ chainId: CHAIN_HEX }] });
+    } catch (e) {
+      if (e.code !== 4902) throw e;
+      await eth().request({ method: "wallet_addEthereumChain", params: [{ chainId: CHAIN_HEX, chainName: "Robinhood Chain",
+        nativeCurrency: { name: "Ether", symbol: "ETH", decimals: 18 },
+        rpcUrls: ["https://rpc.mainnet.chain.robinhood.com"], blockExplorerUrls: [EXPLORER] }] });
+    }
+  }
+
+  async function connect() {
+    if (new URLSearchParams(location.search).has("devwallet")) {
+      const shim = await devShim();
+      if (shim) { window.__partitioProvider = shim; st.dev = true; }
+    }
+    if (!eth()) { note("no", "No wallet found. Open this page in a browser with an Ethereum wallet (MetaMask, Rabby)."); return; }
+    const [a] = await eth().request({ method: "eth_requestAccounts" });
+    st.account = a;
+    await ensureChain();
+    $("connect").textContent = a.slice(0, 6) + "…" + a.slice(-4) + (st.dev ? " (fork)" : "");
+    $("netdot").classList.add("on");
+    await balances();
+    refreshButton();
+  }
+
+  // ---------------------------------------------------------------- reads
+  const pad = (a) => a.toLowerCase().replace(/^0x/, "").padStart(64, "0");
+  async function erc20Bal(token, who) {
+    const r = await eth().request({ method: "eth_call", params: [{ to: token, data: "0x70a08231" + pad(who) }, "latest"] });
+    return BigInt(r);
+  }
+  const fmt = (v, dec, dp = 4) => {
+    const s = (BigInt(v) < 0n ? -BigInt(v) : BigInt(v)).toString().padStart(dec + 1, "0");
+    const i = s.slice(0, -dec), f = s.slice(-dec).slice(0, dp).replace(/0+$/, "");
+    return (BigInt(v) < 0n ? "-" : "") + i + (f ? "." + f : "");
+  };
+  const parseUnits = (txt, dec) => {
+    const [i, f = ""] = String(txt).trim().split(".");
+    if (!/^\d*$/.test(i) || !/^\d*$/.test(f) || (i + f) === "") return null;
+    return BigInt(i || "0") * 10n ** BigInt(dec) + BigInt((f + "0".repeat(dec)).slice(0, dec) || "0");
+  };
+
+  async function balances() {
+    if (!st.account) return;
+    const t = $("ticker").value, tok = st.tokens[t];
+    const [u, s, e] = await Promise.all([erc20Bal(USDG, st.account), tok ? erc20Bal(tok, st.account) : 0n,
+      eth().request({ method: "eth_getBalance", params: [st.account, "latest"] }).then(BigInt)]);
+    st.bal = { usdg: u, stock: s, eth: e };
+    $("hold").innerHTML = `You hold <b>${fmt(u, 6, 2)} USDG</b> · <b>${fmt(s, 18, 6)} ${t}</b> · ` +
+      `<span class="${e === 0n ? "zero" : ""}"><b>${fmt(e, 18, 6)} ETH</b>${e === 0n ? " — and you don't need any" : ""}</span>` +
+      (st.side === "sell" && s > 0n ? ` · <button class="link" id="max">sell all</button>` : "");
+    const m = $("max"); if (m) m.onclick = () => { $("amt").value = fmt(s, 18, 18); invalidate(); };
+  }
+
+  // ---------------------------------------------------------------- ui state
+  function note(kind, text) { const n = $("note"); n.className = "note " + (kind || ""); n.textContent = text || ""; }
+  function step(i, cls) { const el = $("st" + i); el.className = cls; }
+  function refreshButton() {
+    const b = $("go");
+    if (!st.account) { b.textContent = "Connect a wallet"; b.disabled = false; return; }
+    if (st.busy) { b.disabled = true; return; }
+    b.disabled = false;
+    b.textContent = st.prepared ? "Sign 2 messages & trade" : "Review";
+  }
+  function invalidate() { st.prepared = null; $("quote").style.display = "none"; $("steps").style.display = "none"; note(); refreshButton(); }
+  function setSide(s) {
+    st.side = s; $("sBuy").classList.toggle("on", s === "buy"); $("sSell").classList.toggle("on", s === "sell");
+    $("amtLabel").textContent = s === "buy" ? "You pay (USDG)" : `You sell (${$("ticker").value})`;
+    $("outLabel").textContent = "You receive about";
+    if (s === "sell" && st.bal?.stock) $("amt").value = fmt(st.bal.stock, 18, 18);
+    invalidate(); balances();
+  }
+
+  // ---------------------------------------------------------------- review
+  async function review() {
+    const t = $("ticker").value;
+    const dec = st.side === "buy" ? 6 : 18;
+    const amt = parseUnits($("amt").value, dec);
+    if (!amt || amt <= 0n) { note("no", "Enter an amount."); return; }
+    st.busy = true; refreshButton(); note("", "");
+    $("go").textContent = "Finding the best split…";
+    try {
+      const r = await fetch("/api/prepare", { method: "POST", headers: { "content-type": "application/json" },
+        body: JSON.stringify({ ticker: t, direction: st.side, amountIn: amt.toString(), owner: st.account }) });
+      const q = await r.json();
+      if (!r.ok) { note("no", q.reason ? `${q.error}: ${q.reason}` : (q.error || "refused")); return; }
+      st.prepared = q;
+      const outDec = st.side === "buy" ? 18 : 6, outSym = st.side === "buy" ? t : "USDG";
+      $("out").textContent = `${fmt(q.expectedOut, outDec, st.side === "buy" ? 6 : 4)} ${outSym}`;
+      $("minout").textContent = `${fmt(q.minOut, outDec, st.side === "buy" ? 6 : 4)} ${outSym} (${q.slippageBps / 100}% slippage)`;
+      $("fee").textContent = `${fmt(q.fee, 6, 4)} USDG (${q.feeBps / 100}%) — gas is on us`;
+      const d = q.oracle.devBps;
+      $("dev").textContent = d == null ? "—" : `${d >= 0 ? "+" : ""}${(d / 100).toFixed(2)}% vs Chainlink · feed ${q.oracle.feedAgeSeconds >= 5400 ? (q.oracle.feedAgeSeconds / 3600).toFixed(0) + " h" : Math.round(q.oracle.feedAgeSeconds / 60) + " min"} old${q.oracle.feedAgeSeconds >= 5400 ? " (market closed)" : ""}`;
+      const tot = q.route.legs.reduce((a, l) => a + BigInt(l.amountIn), 0n);
+      $("legs").innerHTML = q.route.legs.map((l) => {
+        const pct = Number((BigInt(l.amountIn) * 10000n) / tot) / 100;
+        const name = l.kind === "v4" ? "Uniswap v4" : l.kind === "v3" ? "Uniswap v3" : (l.family || "maker");
+        return `<div class="leg"><span>${name}</span><span class="bar"><i style="width:${pct}%"></i></span><span class="pct">${pct.toFixed(0)}%</span></div>`;
+      }).join("");
+      const g = q.route.splitGainBps;
+      $("gain").textContent = g == null ? "—" : g > 0 ? `+${(g / 100).toFixed(2)}% better` : "same as the best pool";
+      $("quote").style.display = "block";
+      if (d != null && d < -100) note("warn", `The on-chain price sits ${(-d / 100).toFixed(1)}% under Chainlink. The fill is still inside your ${2}% band.`);
+      if (q.mode && !q.mode.trading) note("warn", `Quotes only right now (${q.mode.reason}). Nothing will be sent.`);
+    } catch (e) { note("no", "Could not reach the relayer: " + e.message); }
+    finally { st.busy = false; refreshButton(); }
+  }
+
+  // ---------------------------------------------------------------- sign and trade
+  async function trade() {
+    const q = st.prepared;
+    st.busy = true; refreshButton();
+    $("steps").style.display = "block"; step(1, "now"); step(2, ""); step(3, "");
+    $("st2t").textContent = st.side === "buy"
+      ? "Authorize the USDG — valid for this order only" : `Permit the ${q.ticker} — for this amount only`;
+    try {
+      $("go").textContent = "Waiting for signature 1 of 2…";
+      const orderSignature = await eth().request({ method: "eth_signTypedData_v4", params: [st.account, JSON.stringify(q.sign.order)] });
+      step(1, "done"); step(2, "now");
+      $("go").textContent = "Waiting for signature 2 of 2…";
+      const fundsSignature = await eth().request({ method: "eth_signTypedData_v4", params: [st.account, JSON.stringify(q.sign.funds)] });
+      step(2, "done"); step(3, "now");
+      $("go").textContent = "Filling on-chain…";
+      const r = await fetch("/api/order", { method: "POST", headers: { "content-type": "application/json" },
+        body: JSON.stringify({ order: q.order, orderSignature, fundsSignature, ticker: q.ticker, direction: q.direction, slippageBps: q.slippageBps }) });
+      const out = await r.json();
+      if (out.sent && out.ok) {
+        step(3, "done");
+        const tx = out.txHash;
+        const n = $("note"); n.className = "note go";
+        n.innerHTML = `Filled. <a href="${EXPLORER}/tx/${tx}" target="_blank" rel="noopener">${tx.slice(0, 10)}…${tx.slice(-6)}</a> · ` +
+          `${Number(out.gasUsed).toLocaleString()} gas paid by the relayer`;
+        st.prepared = null; $("quote").style.display = "none";
+        await balances();
+      } else {
+        step(3, "");
+        note("no", out.reason || out.error || "Not sent.");
+      }
+    } catch (e) {
+      note("no", e.code === 4001 ? "Signature declined — nothing was sent, nothing was spent." : e.message);
+    } finally { st.busy = false; refreshButton(); }
+  }
+
+  // ---------------------------------------------------------------- boot
+  async function boot() {
+    const [h, t] = await Promise.all([fetch("/api/health").then((r) => r.json()), fetch("/api/tickers").then((r) => r.json())]);
+    st.health = h;
+    const c = h.contracts || {};
+    for (const [id, a] of [["aRouter", c.routerV2], ["aEntry", c.gaslessEntry]]) {
+      if (!a) continue; const el = $(id); el.href = `${EXPLORER}/address/${a}`; el.querySelector("code").textContent = a.slice(0, 8) + "…" + a.slice(-6);
+    }
+    const tok = await fetch("/partitio-tokens.json").then((r) => r.ok ? r.json() : null).catch(() => null);
+    st.tokens = tok?.tokens || {};
+    $("ticker").innerHTML = t.tickers.sort().map((x) => `<option ${x === "AAPL" ? "selected" : ""}>${x}</option>`).join("");
+    $("nettext").textContent = h.mode?.trading ? "Robinhood Chain · live" : `Robinhood Chain · ${h.mode?.reason || "quotes only"}`;
+  }
+
+  $("connect").onclick = () => connect().catch((e) => note("no", e.message));
+  $("sBuy").onclick = () => setSide("buy");
+  $("sSell").onclick = () => setSide("sell");
+  $("amt").oninput = invalidate;
+  $("ticker").onchange = () => { invalidate(); if (st.side === "sell") $("amtLabel").textContent = `You sell (${$("ticker").value})`; balances(); };
+  $("go").onclick = () => {
+    if (!st.account) return connect().catch((e) => note("no", e.message));
+    return st.prepared ? trade() : review();
+  };
+  boot().catch((e) => note("no", "Relayer unreachable: " + e.message));
+})();
+</script>
+</body>
+</html>

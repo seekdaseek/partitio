@@ -17,7 +17,7 @@ export const RPCS = process.env.PARTITIO_RPC_OVERRIDE
       "https://rpc.mainnet.chain.robinhood.com",
     ].filter(Boolean);
 
-export const HOT_KEY_FILE = path.join(HERE, "hotkey");   // 0600, generated ON the VPS
+export const HOT_KEY_FILE = process.env.PARTITIO_HOT_KEY_FILE || path.join(HERE, "hotkey");   // 0600, generated ON the VPS
 export const DB_PATH = process.env.PARTITIO_RELAYER_DB || path.join(HERE, "relayer.db");
 export const PORT = Number(process.env.PARTITIO_RELAYER_PORT || 3031);
 
