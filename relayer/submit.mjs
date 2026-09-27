@@ -45,7 +45,10 @@ function errorAbi() {
   const out = [];
   for (const f of ["GaslessEntry.sol/GaslessEntry.json", "PartitioRouterV2.sol/PartitioRouterV2.json"]) {
     const p = path.resolve(HERE, "..", "out", f);
-    if (fs.existsSync(p)) out.push(...JSON.parse(fs.readFileSync(p, "utf8")).abi.filter((x) => x.type === "error"));
+    // Loud, like abi(): skipping a missing artifact silently degraded every revert to "unknown",
+    // which a fresh clone hit by running the tests before `forge build`.
+    if (!fs.existsSync(p)) throw new Error(`${f} not found under out/ - run \`forge build\` first`);
+    out.push(...JSON.parse(fs.readFileSync(p, "utf8")).abi.filter((x) => x.type === "error"));
   }
   // OracleGuard is a library; its errors are inlined into both callers, so they arrive via the
   // two ABIs above. Add the ERC20 ones the tokens themselves raise.

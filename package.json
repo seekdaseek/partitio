@@ -7,7 +7,7 @@
     "test:order": "node relayer/order.test.mjs",
     "test:parity": "node relayer/parity.test.mjs",
     "test:submit": "node relayer/submit.test.mjs",
-    "test:js": "node relayer/order.test.mjs && node relayer/parity.test.mjs && node relayer/submit.test.mjs"
+    "test:js": "forge build && node relayer/order.test.mjs && node relayer/parity.test.mjs && node relayer/submit.test.mjs"
   },
   "dependencies": {
     "viem": "2.56.9"
