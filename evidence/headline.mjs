@@ -75,7 +75,10 @@ async function batch(calls, block) {
 }
 
 const db = new DatabaseSync(DB, { readOnly: true });
-const runs = db.prepare("SELECT id, started_at, block FROM run WHERE block IS NOT NULL ORDER BY id").all();
+// HEADLINE_MAX_RUN pins the series: the published headline is runs 1-245, and the collector keeps
+// adding runs, so an unpinned re-run would silently publish different numbers.
+const MAX_RUN = Number(process.env.HEADLINE_MAX_RUN || 1e12);
+const runs = db.prepare("SELECT id, started_at, block FROM run WHERE block IS NOT NULL AND id <= ? ORDER BY id").all(MAX_RUN);
 const tickers = [...new Set(db.prepare("SELECT DISTINCT ticker FROM agg").all().map((r) => r.ticker))].sort();
 
 // token decimals, once, at head
@@ -115,7 +118,7 @@ const rows = db.prepare(`
   SELECT a.run_id, a.ticker, a.direction, a.size_usd, a.amount_in,
          a.best_venue_out, a.split_out, a.kyber_onchain_out, a.lifi_out, r.started_at
   FROM agg a JOIN run r ON r.id = a.run_id
-  WHERE a.amount_in IS NOT NULL`).all();
+  WHERE a.amount_in IS NOT NULL AND a.run_id <= ?`).all(MAX_RUN);
 
 const big = (x) => { try { return x == null ? null : BigInt(x); } catch { return null; } };
 
@@ -240,10 +243,29 @@ for (const t of [...new Set(smallRef.map((c) => c.ticker))].sort()) {
 // saving anyone can have. Gains are per trade (medians), never summed across runs - a sum counts
 // the same thin order book once per snapshot, which is how a $419M figure appears out of nothing.
 {
-  const rowsC = db.prepare("SELECT run_id, ticker, direction, size_usd, transport_gaps, split_out, best_venue_out FROM agg").all();
+  const rowsC = db.prepare("SELECT run_id, ticker, direction, size_usd, amount_in, transport_gaps, split_out, best_venue_out FROM agg WHERE run_id <= ?").all(MAX_RUN);
   const key = (r) => `${r.run_id}|${r.ticker}|${r.direction}|${r.size_usd}`;
   const dev = new Map(cells.map((c) => [`${c.run_id}|${c.ticker}|${c.direction}|${c.size_usd}`, c.devP]));
-  const lastRun = db.prepare("SELECT MAX(id) m, MAX(started_at) t FROM run").get();
+  // The label must name the runs that actually have Chainlink references, i.e. the run list read at
+  // the START. It used to print MAX(id) of the run table at the END, so a query that started just
+  // before run 246 labelled itself "runs to #246" while computing runs 1-245 - which is how the
+  // first published caveat came to say 246.
+  const lastRun = { m: Math.max(...runs.map((r) => r.id)), t: runs.reduce((a, r) => (r.id > a.id ? r : a)).started_at };
+
+  // HEADLINE_DUMP=<dir>: write exactly the inputs this table was computed from, so the headline can
+  // be recomputed offline by evidence/headline-offline.mjs with no database and no archive RPC.
+  if (process.env.HEADLINE_DUMP) {
+    const dir = process.env.HEADLINE_DUMP;
+    fs.mkdirSync(dir, { recursive: true });
+    const csv = (name, head, rowsOut) => fs.writeFileSync(`${dir}/${name}`, head + "\n" + rowsOut.map((r) => r.join(",")).join("\n") + "\n");
+    csv("runs.csv", "id,started_at,block", runs.map((r) => [r.id, r.started_at, r.block]));
+    csv("refs.csv", "run_id,ticker,answer,feed_decimals",
+      [...refAt.entries()].map(([k, v]) => { const [rid, t] = k.split("|"); return [rid, t, v.price.toString(), v.feedDec]; }));
+    csv("agg.csv", "run_id,ticker,direction,size_usd,amount_in,transport_gaps,split_out,best_venue_out",
+      rowsC.map((r) => [r.run_id, r.ticker, r.direction, r.size_usd, r.amount_in, r.transport_gaps, r.split_out ?? "", r.best_venue_out ?? ""]));
+    csv("token_decimals.csv", "ticker,decimals", Object.entries(tokenDec).map(([t, d]) => [t, d]));
+    console.log(`dumped inputs to ${dir}`);
+  }
   console.log(`\n=== HEADLINE (runs to #${lastRun.m}, ${lastRun.t}; complete ladder AND inside the 200 bps band) ===`);
   console.log("size      complete  in_band  split_beat_best  pct_in_band  median_usd_when_split  median_bps");
   for (const sz of [1000, 10000, 100000, 500000]) {

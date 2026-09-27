@@ -21,7 +21,7 @@ HEADLINE
 A $100,000 stock-token order on Robinhood Chain sent to the best single pool left a median $199 on the table in 6,329 of 7,493 executable quotes. partitio splits it and floors the fill against Chainlink.
 
 HEADLINE CAVEAT
-Quoted, not executed. The beta caps trades at $50. Runs 1 to 246, September 24 to 27, 2026. The query is evidence/headline.mjs and it recomputes offline with evidence/headline-offline.mjs.
+Quoted, not executed. The beta caps trades at $50. Runs 1 to 245, September 24 to 27, 2026. The query is evidence/headline.mjs and it recomputes offline with evidence/headline-offline.mjs.
 
 ========================================================================
 SUBMISSION FIELDS
@@ -50,6 +50,9 @@ All of it. The first commit is dated September 24, 2026, and the deployed contra
 
 GITHUB REPOSITORY
 https://github.com/seekdaseek/partitio
+
+DEMO VIDEO
+PENDING. Recorded Monday, September 28, during US market hours. Paste the video link here before submitting.
 
 SPONSOR TECH - tick these three
 

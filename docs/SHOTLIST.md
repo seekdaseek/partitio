@@ -9,8 +9,8 @@ Target length **2:45**. One continuous screen recording, voice-over added after.
 | check | how | pass |
 |---|---|---|
 | relayer is live | `https://partitio.ochinimus.app/api/health` | `trading: true`, `floatEth` ≥ 0.0003 |
-| demo wallet funded | the sweep from the v1 caller, then its balance | 1.006437 USDG, **0 ETH** |
-| wallet labelled as ours | send the address; it goes into `PARTITIO_TEAM_ADDRESSES` | the fill reports `isTeam: true` |
+| demo wallet funded | `0x0032fB2549Eeb8f6E41106c595d5B1b99bBB7554`, funded by the sweep in block 74213677 | 1.006437 USDG, **0 ETH**, no code — done 2026-09-27 |
+| wallet labelled as ours | in `PARTITIO_TEAM_ADDRESSES` on the relayer | done 2026-09-27; the fill reports `isTeam: true` |
 | market open | the app's Chainlink badge | no "market closed" tag, feed minutes old |
 | AAPL is inside the band | the app at `?amt=1` | green badge; if not, use NVDA or SPY |
 | the refusal still shows | the app at `?t=IONQ&side=sell&amt=1` | red badge; if IONQ recovered, find another red sell to show |
