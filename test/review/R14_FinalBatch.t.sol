@@ -47,8 +47,9 @@ contract R14_FinalBatch is ReviewBase {
         uint256 fee = 1e6;
         deal(USDG, user, amt);
         GaslessEntry.Order memory o = _buyOrder(amt, 5e6, 1, bytes32(uint256(142)));
+        GaslessEntry.Auth memory auth51 = _auth(o);
         vm.prank(relayer);
-        assertGt(entry.fill(o, _auth(o), _routerRoute(amt - fee), fee), 0);
+        assertGt(entry.fill(o, auth51, _routerRoute(amt - fee), fee), 0);
     }
 
     // ---------------------------------------------------------------- maxFeedAge
@@ -84,8 +85,9 @@ contract R14_FinalBatch is ReviewBase {
         (, , , uint256 updatedAt, ) = IAggR14(AAPL_FEED).latestRoundData();
         GaslessEntry.Order memory o = _buyOrder(amt, 5e6, 1, bytes32(uint256(144)));
         o.guard.maxFeedAge = (block.timestamp - updatedAt) + 60;
+        GaslessEntry.Auth memory auth89 = _auth(o);
         vm.prank(relayer);
-        assertGt(entry.fill(o, _auth(o), _routerRoute(amt - fee), fee), 0);
+        assertGt(entry.fill(o, auth89, _routerRoute(amt - fee), fee), 0);
     }
 
     /// THE POINT OF THE FIELD: a relayer sitting on a signed order cannot wait for the feed to go

@@ -35,8 +35,9 @@ contract R01_DustDoS is ReviewBase {
             deal(USDG, user, amt);
             GaslessEntry.Order memory o = _buyOrder(amt, 5e6, 0, bytes32(uint256(100 + i)));
             uint256 userBefore = IERC20(AAPL).balanceOf(user);
+            GaslessEntry.Auth memory auth39 = _auth(o);
             vm.prank(relayer);
-            uint256 got = entry.fill(o, _auth(o), _routerRoute(amt - fee), fee);
+            uint256 got = entry.fill(o, auth39, _routerRoute(amt - fee), fee);
             assertGt(got, 0, "fill blocked by the donation");
             assertEq(IERC20(AAPL).balanceOf(user) - userBefore, got, "user did not receive the fill");
         }
@@ -59,8 +60,9 @@ contract R01_DustDoS is ReviewBase {
         GaslessEntry.Route memory r = GaslessEntry.Route({
             aggregator: KYBER_ROUTER, callData: hex"deadbeef", aggMinOut: 0, legs: _legs1(0, amt - fee)
         });
+        GaslessEntry.Auth memory auth64 = _auth(o);
         vm.prank(relayer);
-        uint256 got = entry.fill(o, _auth(o), r, fee);
+        uint256 got = entry.fill(o, auth64, r, fee);
 
         // got is what the fallback actually bought, not 5 AAPL of somebody else's donation
         assertGt(got, 0, "fallback did not run");
@@ -81,8 +83,9 @@ contract R01_DustDoS is ReviewBase {
         deal(USDG, user, amt);
         uint256 userUsdgBefore = IERC20(USDG).balanceOf(user);
         GaslessEntry.Order memory o = _buyOrder(amt, 5e6, 0, bytes32(uint256(4)));
+        GaslessEntry.Auth memory auth87 = _auth(o);
         vm.prank(relayer);
-        entry.fill(o, _auth(o), _routerRoute(amt - fee), fee);
+        entry.fill(o, auth87, _routerRoute(amt - fee), fee);
 
         // the user spent exactly amt and was handed none of the attacker's 250 USDG
         assertEq(userUsdgBefore - IERC20(USDG).balanceOf(user), amt, "user's USDG delta wrong");

@@ -137,3 +137,16 @@ contract DoubleCallbackPool is IUniswapV3SwapCallback {
 
     function uniswapV3SwapCallback(int256, int256, bytes calldata) external pure override {}
 }
+
+/// @notice The shape the judges left PARTIAL as `r01-spent-donation`. Kyber's MetaAggregationRouterV2
+/// takes `srcReceivers` and `dstReceiver` from calldata the relayer writes, so it CAN route the pulled
+/// input to an arbitrary address and deliver an arbitrary token back to the caller - including the
+/// input token itself. This mock does both at once: it pulls `pull` of tokenIn, hands `donate` of
+/// tokenIn straight back to the caller from its own balance, and delivers `deliver` of tokenOut.
+contract DonatingAggregator {
+    function swap(address tokenIn, uint256 pull, uint256 donate, address tokenOut, uint256 deliver) external {
+        IERC20(tokenIn).transferFrom(msg.sender, address(this), pull);
+        if (donate != 0) IERC20(tokenIn).transfer(msg.sender, donate);
+        if (deliver != 0) IERC20(tokenOut).transfer(msg.sender, deliver);
+    }
+}

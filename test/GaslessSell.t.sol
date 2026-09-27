@@ -144,8 +144,9 @@ contract GaslessSellTest is Test {
         // find the gross first
         uint256 snap = vm.snapshotState();
         GaslessEntry.Order memory probe = _sellOrder(amt, 5e6, 0, bytes32(uint256(21)));
+        GaslessEntry.Auth memory auth148 = _sellAuth(probe);
         vm.prank(relayer);
-        uint256 gross = entry.fill(probe, _sellAuth(probe), _route(amt), 0);
+        uint256 gross = entry.fill(probe, auth148, _route(amt), 0);
         vm.revertToState(snap);
 
         // now demand exactly the gross while a fee is charged: net < minOut, must revert

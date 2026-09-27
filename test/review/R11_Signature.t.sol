@@ -185,8 +185,9 @@ contract R11_Signature is ReviewBase {
         GaslessEntry.Order memory o = _sellOrder(1e18, bytes32(uint256(20)));
         GaslessEntry.Route memory r =
             GaslessEntry.Route({aggregator: address(0), callData: "", aggMinOut: 0, legs: _legs1(0, 1e18)});
+        GaslessEntry.Auth memory auth189 = _sellAuth(o, n);
         vm.prank(relayer);
-        uint256 outs0 = entry.fill(o, _sellAuth(o, n), r, 1e6);
+        uint256 outs0 = entry.fill(o, auth189, r, 1e6);
         assertGt(outs0, 0, "sell should fill");
     }
 

@@ -172,16 +172,18 @@ contract R13_HunterFindings is ReviewBase {
             legs: _legs1(0, spendable)
         });
         vm.recordLogs();
+        GaslessEntry.Auth memory auth176 = _auth(o);
         vm.prank(relayer);
-        entry.fill(o, _auth(o), r, fee);
+        entry.fill(o, auth176, r, fee);
         assertTrue(_usedAggregatorFromLogs(), "the aggregator branch must report itself");
 
         // --- router path: same shape, no aggregator
         deal(USDG, user, amt);
         GaslessEntry.Order memory o2 = _buyOrder(amt, fee, 0, bytes32(uint256(136)));
         vm.recordLogs();
+        GaslessEntry.Auth memory auth185 = _auth(o2);
         vm.prank(relayer);
-        entry.fill(o2, _auth(o2), _routerRoute(spendable), fee);
+        entry.fill(o2, auth185, _routerRoute(spendable), fee);
         assertFalse(_usedAggregatorFromLogs(), "and the partitio branch must not claim it");
     }
 

@@ -143,8 +143,9 @@ contract GaslessEntryTest is Test {
         uint256 fee = 1e6;
         deal(USDG, user, amt);
         GaslessEntry.Order memory o = _order(amt, 5e6, 0, bytes32(uint256(2)));
+        GaslessEntry.Auth memory auth147 = _auth(o);
         vm.prank(relayer);
-        entry.fill(o, _auth(o), _routeFor(amt - fee), fee);
+        entry.fill(o, auth147, _routeFor(amt - fee), fee);
         assertEq(IERC20(USDG).balanceOf(address(entry)), 0, "entry kept USDG");
         assertEq(IERC20(AAPL).balanceOf(address(entry)), 0, "entry kept AAPL");
         assertEq(IERC20(USDG).balanceOf(address(router)), 0, "router kept USDG");
@@ -175,8 +176,9 @@ contract GaslessEntryTest is Test {
         GaslessEntry.Order memory o = _order(amt, 5e6, 0, bytes32(uint256(4)));
         bytes32 oh = entry.hashOrder(o);
         assertFalse(IUSDG(USDG).authorizationState(user, oh), "nonce used before the fill");
+        GaslessEntry.Auth memory auth180 = _auth(o);
         vm.prank(relayer);
-        entry.fill(o, _auth(o), _route(amt - fee, 0), fee);
+        entry.fill(o, auth180, _route(amt - fee, 0), fee);
         assertTrue(IUSDG(USDG).authorizationState(user, oh), "USDG did not consume the nonce");
     }
 
@@ -258,8 +260,9 @@ contract GaslessEntryTest is Test {
             aggMinOut: 0,
             legs: _legs(amt - fee, 0)
         });
+        GaslessEntry.Auth memory auth264 = _auth(o);
         vm.prank(relayer);
-        uint256 got = entry.fill(o, _auth(o), r, fee);
+        uint256 got = entry.fill(o, auth264, r, fee);
         console2.log("fallback delivered AAPL:", got);
         assertGt(got, 0, "fallback did not run");
         assertEq(IERC20(AAPL).balanceOf(user), got);

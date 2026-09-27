@@ -74,8 +74,9 @@ contract R04_RelayerControl is ReviewBase {
         GaslessEntry.Route memory r =
             GaslessEntry.Route({aggregator: address(0), callData: "", aggMinOut: 0, legs: legs});
 
+        GaslessEntry.Auth memory auth78 = _auth(o);
         vm.prank(relayer);
-        uint256 got = entry.fill(o, _auth(o), r, fee);
+        uint256 got = entry.fill(o, auth78, r, fee);
         assertGt(got, 0, "two-venue split should fill");
         assertEq(IERC20(AAPL).balanceOf(user), got);
     }
@@ -108,8 +109,9 @@ contract R04_RelayerControl is ReviewBase {
         uint256 fee = 1e6;
         deal(USDG, user, 500e6);
         GaslessEntry.Order memory o1 = _buyOrder(500e6, 5e6, 0, bytes32(uint256(25)));
+        GaslessEntry.Auth memory auth113 = _auth(o1);
         vm.prank(relayer);
-        assertGt(entry.fill(o1, _auth(o1), _routerRoute(500e6 - fee), fee), 0, "AAPL alone fills");
+        assertGt(entry.fill(o1, auth113, _routerRoute(500e6 - fee), fee), 0, "AAPL alone fills");
 
         deal(USDG, user, 500e6);
         GaslessEntry.Order memory o2 = _buyOrder(500e6, 5e6, 0, bytes32(uint256(26)));
@@ -117,8 +119,9 @@ contract R04_RelayerControl is ReviewBase {
         GaslessEntry.Route memory r2 = GaslessEntry.Route({
             aggregator: address(0), callData: "", aggMinOut: 0, legs: _legs1(2, 500e6 - fee)
         });
+        GaslessEntry.Auth memory auth123 = _auth(o2);
         vm.prank(relayer);
-        assertGt(entry.fill(o2, _auth(o2), r2, fee), 0, "AMZN alone fills");
+        assertGt(entry.fill(o2, auth123, r2, fee), 0, "AMZN alone fills");
     }
 
     /// NEW (audit finding `router-tokenout-unchecked`): a leg pointing at a correctly-committed
