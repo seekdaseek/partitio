@@ -83,18 +83,33 @@ const inputs = JSON.parse(fs.readFileSync(path.join(ROOT, "deploy", "v2-inputs.j
 const R = art("PartitioRouterV2");
 const G = art("GaslessEntry");
 
-console.log("\ndeploy (same bytecode, same generated inputs)");
+// PARTITIO_E2E_DEPLOYED=1: skip the deploy and drive the contracts ALREADY on mainnet, which a
+// fork of head contains. That is the closest a test can get to the real thing without being it.
+const USE_DEPLOYED = process.env.PARTITIO_E2E_DEPLOYED === "1";
+console.log(USE_DEPLOYED ? "\nusing the contracts already deployed on mainnet (present in the fork)"
+                         : "\ndeploy (same bytecode, same generated inputs)");
 const dw = wallet(DEPLOYER);
-const rHash = await dw.deployContract({ abi: R.abi, bytecode: R.bytecode.object,
-  args: [inputs.poolManager, inputs.venueRoot, inputs.stockTokens, inputs.feeds] });
-const rRcpt = await pub.waitForTransactionReceipt({ hash: rHash });
-const ROUTER = rRcpt.contractAddress;
-const eHash = await dw.deployContract({ abi: G.abi, bytecode: G.bytecode.object,
-  args: [inputs.usdg, ROUTER, inputs.aggregators] });
-const eRcpt = await pub.waitForTransactionReceipt({ hash: eHash });
-const ENTRY = eRcpt.contractAddress;
-check("router deployed", rRcpt.status === "success", `${ROUTER}  gas ${rRcpt.gasUsed}`);
-check("entry deployed", eRcpt.status === "success", `${ENTRY}  gas ${eRcpt.gasUsed}`);
+let ROUTER, ENTRY, rRcpt = { gasUsed: 0n }, eRcpt = { gasUsed: 0n };
+if (USE_DEPLOYED) {
+  // The forked head is an upstream block with no excessBlobGas (the chain has no blobs), and anvil
+  // refuses to eth_call against it. One locally mined block is enough; a deploy used to do this.
+  await call("evm_mine", []);
+  ROUTER = getAddress("0x22be28fd3AECa3A1ba4a918E4DD458ba6B5E09EA");
+  ENTRY = getAddress("0x9645388051ece3a437D5E224B17c156b16840AC7");
+  check("mainnet router present in the fork", (await pub.getCode({ address: ROUTER }))?.length > 2, ROUTER);
+  check("mainnet entry present in the fork", (await pub.getCode({ address: ENTRY }))?.length > 2, ENTRY);
+} else {
+  const rHash = await dw.deployContract({ abi: R.abi, bytecode: R.bytecode.object,
+    args: [inputs.poolManager, inputs.venueRoot, inputs.stockTokens, inputs.feeds] });
+  rRcpt = await pub.waitForTransactionReceipt({ hash: rHash });
+  ROUTER = rRcpt.contractAddress;
+  const eHash = await dw.deployContract({ abi: G.abi, bytecode: G.bytecode.object,
+    args: [inputs.usdg, ROUTER, inputs.aggregators] });
+  eRcpt = await pub.waitForTransactionReceipt({ hash: eHash });
+  ENTRY = eRcpt.contractAddress;
+  check("router deployed", rRcpt.status === "success", `${ROUTER}  gas ${rRcpt.gasUsed}`);
+  check("entry deployed", eRcpt.status === "success", `${ENTRY}  gas ${eRcpt.gasUsed}`);
+}
 const root = await pub.readContract({ address: ROUTER, abi: R.abi, functionName: "VENUE_ROOT" });
 check("VENUE_ROOT is the generated root", root === inputs.venueRoot);
 const deployGas = { router: rRcpt.gasUsed, entry: eRcpt.gasUsed };
@@ -195,7 +210,8 @@ console.log("\nbuy 1 USDG of AAPL (the demo trade, on the fork)");
 const gasRows = [];
 {
   const u0 = await bal(USDG, A.address), a0 = await bal(AAPL, A.address), rl0 = await bal(USDG, RELAYER.address);
-  const { body, orderHash } = await buildOrder(A, "buy", 1_000_000n);
+  const { body, orderHash, quote } = await buildOrder(A, "buy", 1_000_000n);
+  console.log("        route: " + quote.legs.map((l) => `${l.kind} ${String(l.venue).slice(0, 10)} ${l.amountIn}`).join(" | "));
   const { code, out } = await submit(body);
   check("filled and mined", code === 200 && out.sent && out.ok, JSON.stringify(out).slice(0, 220));
   if (out.sent) {
@@ -218,7 +234,8 @@ console.log("\nsell it all back (permit, fee out of the USDG proceeds)");
 {
   const held = await bal(AAPL, A.address);
   const u0 = await bal(USDG, A.address), rl0 = await bal(USDG, RELAYER.address);
-  const { body, orderHash } = await buildOrder(A, "sell", held);
+  const { body, orderHash, quote } = await buildOrder(A, "sell", held);
+  console.log("        route: " + quote.legs.map((l) => `${l.kind} ${String(l.venue).slice(0, 10)} ${l.amountIn}`).join(" | "));
   const { code, out } = await submit(body);
   check("filled and mined", code === 200 && out.sent && out.ok, JSON.stringify(out).slice(0, 220));
   if (out.sent) {
