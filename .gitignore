@@ -7,8 +7,11 @@
 # foundry
 cache/
 out/
-broadcast/
-!broadcast/*/*/run-latest.json
+# Deployment records ARE tracked (run-latest.json: tx hashes, receipts, no secrets - those go to
+# cache/). A `broadcast/` + `!.../run-latest.json` pair never worked: git cannot re-include a file
+# whose parent directory is excluded. Ignore only the dry runs and the timestamped duplicates.
+broadcast/**/dry-run/
+broadcast/**/run-[0-9]*.json
 
 # node
 node_modules/

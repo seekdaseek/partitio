@@ -1,5 +1,38 @@
 # Mainnet deployments — Robinhood Chain (4663)
 
+## v2 — PartitioRouterV2 + GaslessEntry (2026-09-27) — LIVE
+
+Ownerless and immutable: no owner, no pause, no upgrade, no sweep. Deployed from tag
+`deploy-v2` (`ea6f70b`); `src/` is byte-identical to `7f67ba6`, the commit the final adversarial
+hunter reviewed. Every constructor argument came from `deploy/v2-inputs.json`, generated and
+verified on-chain by `script/predeploy-bindings.mjs` and `script/deploy-inputs.mjs`.
+
+| contract | address | tx | block | gas |
+|---|---|---|---|---|
+| PartitioRouterV2 | `0x22be28fd3AECa3A1ba4a918E4DD458ba6B5E09EA` | `0x12c7363910f26e7b5fe9c8f2e208fb38cbfc493bf66872e2dc67ca4048a4923c` | 74130616 | 3,113,883 |
+| GaslessEntry | `0x9645388051ece3a437D5E224B17c156b16840AC7` | `0xb4539d6c9488350abb899ef1a8f2aae46383bdc77391ac7e9eb9993447060f7a` | 74130643 | 2,293,623 |
+
+**Source verified on Sourcify, `exact_match` on creation and runtime bytecode**, confirmed through
+`sourcify.dev/server/v2/contract/4663/<address>` (negative control: the deployer EOA returns `null`).
+
+Read back from the chain after deployment, independently of forge's own check:
+`VENUE_ROOT` = `0x479225b5355fa32c3695106a2d164ab0b04f943a5d6c9c6bd28a85f35a914fc2` (161 venues, equal
+to the generated input); `poolManager` = `0x8366a39CC670B4001A1121B8F6A443A643e40951`;
+`feedOf(AAPL)` = `0x4bDbb3150014c6Ab2C6D9347B0779c49015a2f3f`; `entry.USDG` = USDG;
+`entry.ROUTER` = the router; Kyber `0x6131B5fae19EA4f9D964eAc0408E4408b66337b5` allowed,
+`address(0)` not.
+
+**The fork predicted mainnet gas to the unit.** `relayer/fork-e2e.mjs` deployed the same bytecode
+with the same inputs on an anvil fork and measured 3,113,883 and 2,293,623 gas - exactly what
+mainnet charged.
+
+Cost: 0.000109315 ETH at 0.020 gwei. Deployer `0x7a7c915D8dA490c48915Fe735DDf41f8Dea83dC2`:
+0.000698007 ETH before, 0.000588692 ETH after, nonce 11 -> 13.
+
+---
+
+## v1 — PartitioRouter + PartitioCaller (2026-09-24)
+
 Deployer `0x7a7c915D8dA490c48915Fe735DDf41f8Dea83dC2` — a throwaway key generated for this build,
 held 0600 outside the repo, never printed. Funded once with 0.001485471295631397 ETH; that is the
 entire budget for the live proof.
