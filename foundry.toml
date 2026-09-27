@@ -7,6 +7,11 @@ optimizer = true
 optimizer_runs = 1000
 via_ir = true
 evm_version = "cancun"
+# DeployV2.s.sol and its fork test read the GENERATED deploy inputs; nothing else is readable.
+fs_permissions = [
+    { access = "read", path = "./deploy" },
+    { access = "read", path = "./relayer/venues.json" },
+]
 
 # Fork tests are pinned. The canonical RPC is NOT an archive node: it serves state for roughly
 # the last 5,000-20,000 blocks only (measured 2026-09-24 - head-5000 OK, head-20000 refused).

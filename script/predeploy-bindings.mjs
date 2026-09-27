@@ -13,7 +13,19 @@
 //
 // Run: node script/predeploy-bindings.mjs
 import fs from "node:fs";
+import path from "node:path";
 import { execFileSync } from "node:child_process";
+import { candidateVenues } from "../relayer/venues.mjs";
+
+// --out <file>: also write the verified constructor arrays as JSON, which script/deploy-inputs.mjs
+// consumes. Printing them for a human to copy was how a transposed pair would have got in.
+const OUT = (() => { const i = process.argv.indexOf("--out"); return i > 0 ? process.argv[i + 1] : null; })();
+const STATE_VIEW = "0xf3334192d15450cdd385c8b70e03f9a6bd9e673b";
+// --accept-gap T1,T2: a recorded decision that a ticker's feed-vs-pool PRICE gap is the market, not
+// a miswiring. It waives only that one check - symbol, description and a live answer still gate.
+// IONQ and RKLB: ruled bound on 2026-09-25 (the guard refusing a bad sell is the product working).
+const ACCEPT_GAP = new Set((() => { const i = process.argv.indexOf("--accept-gap"); return i > 0 ? process.argv[i + 1].split(",") : []; })());
+const acceptedGaps = {};
 
 const RPC = process.env.PARTITIO_RPC || "https://rpc.mainnet.chain.robinhood.com";
 const USDG = "0x5fc5360d0400a0fd4f2af552add042d716f1d168";
@@ -50,6 +62,13 @@ const venues = JSON.parse(fs.readFileSync("script/recon/venues.json", "utf8")).v
 const syms = Object.keys(tokens).filter((s) => feeds[s]).sort();
 let problems = [];
 const bind = [];
+const unchecked = [];
+const V4_BY_TICKER = new Map();
+for (const v of candidateVenues()) {
+  if (v.kind !== "v4") continue;
+  if (!V4_BY_TICKER.has(v.ticker)) V4_BY_TICKER.set(v.ticker, []);
+  V4_BY_TICKER.get(v.ticker).push(v);
+}
 
 console.log("sym     symbol()  tdec  feed description()              fdec        price     pool mid     diff");
 console.log("-".repeat(104));
@@ -85,16 +104,37 @@ for (const s of syms) {
       mid = t0 === USDG ? 1e12 / praw : praw * 1e12;
     }
   }
+  // No v3 pool: read the deepest COMMITTED v4 pool through StateView. This closes the gap the
+  // first version admitted to - six tickers trade only on v4 and their feeds were never
+  // cross-checked against a market price at all.
+  let midSrc = Number.isFinite(mid) ? "v3" : "-";
+  if (!Number.isFinite(mid)) {
+    const v4s = V4_BY_TICKER.get(s) || [];
+    if (v4s.length) {
+      const pool = v4s.reduce((a, b) => (BigInt(b.liquidity) > BigInt(a.liquidity) ? b : a));
+      const slot = cast(["call", STATE_VIEW, "getSlot0(bytes32)(uint160,int24,uint24,uint24)", pool.poolId]);
+      if (slot) {
+        const sq = BigInt(slot.split("\n")[0].split(/\s/)[0]);
+        if (sq > 0n) {
+          const praw = Number(sq * sq) / 2 ** 192;
+          mid = pool.token0.toLowerCase() === USDG ? 1e12 / praw : praw * 1e12;
+          midSrc = "v4";
+        }
+      }
+    }
+  }
   const diff = Number.isFinite(mid) ? ((mid - price) / price) * 100 : NaN;
   if (Number.isFinite(diff) && Math.abs(diff) > PRICE_TOLERANCE_PCT)
-    gate(`feed is ${diff.toFixed(2)}% from the deepest v3 pool mid`);
+    if (ACCEPT_GAP.has(s)) acceptedGaps[s] = Number(diff.toFixed(2));
+    else gate(`feed is ${diff.toFixed(2)}% from the deepest ${midSrc} pool mid`);
+  if (!Number.isFinite(mid) && !HIDDEN.has(s)) unchecked.push(s);
 
   const tag = HIDDEN.has(s) ? "HIDDEN" : "bind";
   if (!HIDDEN.has(s)) bind.push([s, t, f]);
   console.log(
     `${s.padEnd(7)} ${symbol.padEnd(9)} ${tdec.padEnd(5)} ${desc.slice(0, 30).padEnd(31)} ${fdec.padEnd(5)}` +
     ` ${price.toFixed(4).padStart(11)} ${(Number.isFinite(mid) ? mid.toFixed(4) : "-").padStart(12)}` +
-    ` ${(Number.isFinite(diff) ? diff.toFixed(2) + "%" : "-").padStart(8)}  ${tag}`
+    ` ${(Number.isFinite(diff) ? diff.toFixed(2) + "%" : "-").padStart(8)} ${midSrc.padEnd(3)} ${tag}`
   );
 }
 
@@ -110,6 +150,24 @@ console.log(`  feeds       = [${bind.map((b) => b[2]).join(",")}]`);
 if (rpcFailures > syms.length * 0.2) {
   console.error(`\nFATAL: ${rpcFailures} RPC calls failed. This is the endpoint, not the bindings.`);
   process.exit(2);
+}
+
+if (unchecked.length) {
+  console.log(`\nno market price to cross-check (no committed pool): ${unchecked.join(", ")}`);
+}
+
+if (OUT && !problems.length) {
+  fs.mkdirSync(path.dirname(OUT), { recursive: true });
+  fs.writeFileSync(OUT, JSON.stringify({
+    checkedAt: new Date().toISOString(),
+    block: Number(cast(["block-number"]) || 0),
+    tickers: bind.map((b) => b[0]),
+    stockTokens: bind.map((b) => b[1]),
+    feeds: bind.map((b) => b[2]),
+    uncheckedAgainstMarket: unchecked,
+    acceptedGaps,
+  }, null, 1) + "\n");
+  console.log(`wrote ${OUT}`);
 }
 
 if (problems.length) {
