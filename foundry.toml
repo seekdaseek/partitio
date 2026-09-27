@@ -19,6 +19,11 @@ fs_permissions = [
 # tests reproducible afterwards is Foundry's local fork cache under ~/.foundry/cache. A fresh
 # clone must either re-pin to a recent block or point at an archive RPC. Stated because a
 # "pinned" test that silently needs a warm cache is a trap for whoever runs this next.
+# `forge test` with no flags forks the public Robinhood Chain RPC at its latest block, so a fresh
+# clone runs green without knowing about script/review-run.sh (which additionally re-pins to
+# head-60 and lets a block be reused from the local fork cache).
+eth_rpc_url = "https://rpc.mainnet.chain.robinhood.com"
+
 [rpc_endpoints]
 robinhood = "https://rpc.mainnet.chain.robinhood.com"
 

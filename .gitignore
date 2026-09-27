@@ -46,3 +46,8 @@ crytic-export/
 
 # local preview config (points at scratch paths)
 .claude/launch.json
+
+# build output and tooling environments - never source, and 950 MB of history until 2026-09-27
+stylus/**/target/
+.venv*/
+crytic-export/
