@@ -10,7 +10,7 @@ import {IPoolManager} from "../../src/interfaces/IPoolManager.sol";
 import {IUSDG} from "../../src/v2/IUSDG.sol";
 import {IERC20} from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 
-/// Adversarial hunt over b507c6c..HEAD in src/ only.
+/// Adversarial hunt over 8db0239..HEAD in src/ only.
 contract HuntDiff is ReviewBase {
     SkimmingAggregator internal agg;
 

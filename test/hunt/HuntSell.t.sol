@@ -16,7 +16,7 @@ interface IAgg3 {
     function latestRoundData() external view returns (uint80, int256, uint256, uint256, uint80);
 }
 
-/// Sell-side half of the hunt over b507c6c..HEAD: the pro-rata fee when the fee comes out of the
+/// Sell-side half of the hunt over 8db0239..HEAD: the pro-rata fee when the fee comes out of the
 /// USDG OUTPUT, and the accept-branch fall-through when tokenIn is the 18-decimal stock.
 contract HuntSell is Test {
     GaslessEntry entry;

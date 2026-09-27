@@ -1,9 +1,9 @@
 # Review fixes — what changed, and what each fix is pinned by
 
 Companion to `docs/REVIEW-2026-09-25.md`. That file is the finding list as written; this one is the
-disposition. Fix commit `3886648`.
+disposition. Fix commit `3288713`.
 
-**Read this first.** The review describes revision `ef15927`. `main` was two commits past it by the
+**Read this first.** The review describes revision `e1e2e34`. `main` was two commits past it by the
 time the fixes were written, and those commits had already closed some findings and introduced
 others. Everything below was measured against `main`, not inherited from the report.
 
@@ -11,13 +11,13 @@ others. Everything below was measured against `main`, not inherited from the rep
 
 ## 1. Already closed before any fix work
 
-Measured by running the review's own PoCs against `main` at `fc51b58`:
+Measured by running the review's own PoCs against `main` at `1cf7d6c`:
 
 | finding | closed by | evidence |
 |---|---|---|
-| R-02 (accept path only) | `0e4b72d` | the three aggregator PoCs began reverting `BelowOracleFloor` |
-| R-04 | `0e4b72d` (`_scaleLegs`) | under-routing PoC delivered 2.944e18 instead of 2.94e16 |
-| R-12 (on-chain half) | `0e4b72d` | permit is skipped when the allowance already suffices |
+| R-02 (accept path only) | `06b0c45` | the three aggregator PoCs began reverting `BelowOracleFloor` |
+| R-04 | `06b0c45` (`_scaleLegs`) | under-routing PoC delivered 2.944e18 instead of 2.94e16 |
+| R-12 (on-chain half) | `06b0c45` | permit is skipped when the allowance already suffices |
 
 R-02 was only **half** closed, which is the subject of §3.
 
@@ -50,7 +50,7 @@ specification **literally** would have shipped a new bug.
 
 ### `agg-reject-path-unguarded` — critical, and not closed by the first R-02 fix
 
-The guard added in `0e4b72d` sat inside the aggregator **accept** branch. A route *rejected* on
+The guard added in `06b0c45` sat inside the aggregator **accept** branch. A route *rejected* on
 quality after consuming input was never guarded at all: the fallback only guarded the remainder.
 Consume 500 of 999 USDG, deliver 10 wei of AAPL, be rejected, let the router honestly fill the rest
 — the fill succeeds and half the order is gone. The review's own PoCs missed this because they all
@@ -64,7 +64,7 @@ preference only; the aggregate check covers both branches.
 
 ### `maxfee-denomination-sell` — the fee cap was loose by ~10¹²
 
-`maxFee` was documented "in tokenIn units" while the fee has been paid in USDG since `0e4b72d`. On
+`maxFee` was documented "in tokenIn units" while the fee has been paid in USDG since `06b0c45`. On
 an 18-decimal sell the signed cap therefore bounded nothing. Two test files in this repo already
 disagreed about the field's units. Renamed `maxFeeUsdg` so the denomination is part of the signed
 type, and bounded again by `MAX_FEE_BPS = 0.50%` of the USDG side.
@@ -284,7 +284,7 @@ is actually unusual.
 
 ## 10. The single hunter on the unreviewed diff (2026-09-25)
 
-One adversarial pass over `git diff b507c6c..HEAD -- src/` — the ~90 lines of money code that had
+One adversarial pass over `git diff 8db0239..HEAD -- src/` — the ~90 lines of money code that had
 not been independently reviewed. **No HIGH, no MEDIUM.** Four LOWs, three corrections to my own
 description of the diff, and one process finding. Seventeen PoCs live in `test/hunt/` and all
 seventeen reproduce.
@@ -292,9 +292,9 @@ seventeen reproduce.
 ### Corrections to what I said the diff contained
 
 I got two things wrong describing my own work, and the hunter caught both by reading
-`git show b507c6c:` rather than taking the list at face value.
+`git show 8db0239:` rather than taking the list at face value.
 
-- **`feedOf`, the constructor map and `feedFor` already existed at `b507c6c`.** The only
+- **`feedOf`, the constructor map and `feedFor` already existed at `8db0239`.** The only
   feed-binding change in this diff is the duplicate-FEED loop. I listed the whole binding as new.
 - **The diff contains a router change I did not list:** `unlockCallback` now consumes its payload
   binding with `tstore(su, 0)` ON ENTRY (`PartitioRouterV2.sol:361`). An undocumented money-path

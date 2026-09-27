@@ -3,7 +3,7 @@
 ## v2 — PartitioRouterV2 + GaslessEntry (2026-09-27) — LIVE
 
 Ownerless and immutable: no owner, no pause, no upgrade, no sweep. Deployed from tag
-`deploy-v2` (`ea6f70b`); `src/` is byte-identical to `7f67ba6`, the commit the final adversarial
+`deploy-v2` (`8698a5e`); `src/` is byte-identical to `cceeb08`, the commit the final adversarial
 hunter reviewed. Every constructor argument came from `deploy/v2-inputs.json`, generated and
 verified on-chain by `script/predeploy-bindings.mjs` and `script/deploy-inputs.mjs`.
 
