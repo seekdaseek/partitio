@@ -59,21 +59,46 @@ export async function batch(reqs, opts = {}) {
   return out;
 }
 
+// A rate limit is not an answer. QuickNode counts every call in a batch against 15/s and returns
+// HTTP 200 with per-item "request limit reached" errors; treating those as null made a rate-limited
+// batch read as a thin market - the $50 AAPL quote came back as 0.018 AAPL through one venue with no
+// best single pool at all. Limited items now retry on the next endpoint; a genuine revert (a pool
+// that cannot fill the size) stays null, because that IS the answer.
+const isLimit = (err) => /limit|rate|quota|credit|too many|exceeded|capacity/i.test(String(err?.message || ""));
+
+// Batches go first to endpoints that serve batches (publicnode: 30 per batch, measured), and to the
+// per-call-metered archive endpoint last. Single calls keep the configured order.
+function batchOrder() {
+  const idx = RPCS.map((_, i) => i);
+  if (RPCS.length < 2) return idx;
+  const metered = (u) => /quiknode|quicknode/i.test(u);
+  return [...idx.filter((i) => !metered(RPCS[i])), ...idx.filter((i) => metered(RPCS[i]))];
+}
+
 async function batchOne(reqs, { timeoutMs = 30000 } = {}) {
   const body = reqs.map((r) => ({ jsonrpc: "2.0", id: ++id, method: r.method, params: r.params }));
-  for (let i = 0; i < RPCS.length; i++) {
+  const results = new Array(reqs.length).fill(undefined);   // undefined = not answered yet
+  let pending = body.map((_, k) => k);
+  for (const i of batchOrder()) {
+    if (!pending.length) break;
     try {
       const r = await fetch(RPCS[i], {
         method: "POST", headers: { "content-type": "application/json" },
-        body: JSON.stringify(body), signal: AbortSignal.timeout(timeoutMs),
+        body: JSON.stringify(pending.map((k) => body[k])), signal: AbortSignal.timeout(timeoutMs),
       });
       if (r.status === 429) continue;
       const j = await r.json();
       if (!Array.isArray(j)) continue;
       const m = new Map(j.map((x) => [x.id, x]));
       healthy[i] = true;
-      return body.map((b) => { const z = m.get(b.id); return z && !z.error ? z.result : null; });
+      const still = [];
+      for (const k of pending) {
+        const z = m.get(body[k].id);
+        if (!z || (z.error && isLimit(z.error))) { still.push(k); continue; }
+        results[k] = z.error ? null : z.result;
+      }
+      pending = still;
     } catch { healthy[i] = false; }
   }
-  return reqs.map(() => null);
+  return results.map((x) => (x === undefined ? null : x));
 }

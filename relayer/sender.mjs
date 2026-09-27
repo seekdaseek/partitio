@@ -119,7 +119,20 @@ export function createSender({ privateKey, chainId, anvil = false, receiptTimeou
       }
       const nonce = nextNonce;
 
-      const estimate = hexToBig(await call("eth_estimateGas", [{ from: account.address, to, data }]));
+      // A revert here is a REFUSAL with a reason, not a transport failure: nothing has been signed or
+      // sent. It happens when state moves between the simulation and this line - on the fork it was
+      // an order whose deadline passed while it waited - and it must reach the user as the contract's
+      // own error, not as "send failed".
+      let estimate;
+      try {
+        estimate = hexToBig(await call("eth_estimateGas", [{ from: account.address, to, data }]));
+      } catch (e) {
+        const raw = e?.data ?? (typeof e?.message === "string" ? (e.message.match(/0x[0-9a-fA-F]{8,}/) || [])[0] : null);
+        const err = new Error("gas estimation reverted - nothing broadcast");
+        err.revert = raw ?? null;
+        err.notSent = true;
+        throw err;
+      }
       const gas = (estimate * 125n) / 100n;
 
       let hashes = [];

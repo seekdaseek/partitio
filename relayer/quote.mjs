@@ -29,6 +29,22 @@ const SEL_LRD = "0xfeaf968c";
 const K = 8;
 const MAX_VENUES = 6;
 
+// Gas of the route a user would otherwise send themselves. Uniswap's QuoterV2 and V4Quoter return
+// a gasEstimate for the swap alongside amountOut; the maker pairs' quote does not, so their figure
+// is MEASURED: eth_estimateGas of each committed pair's own swapExactIn on a fork of head,
+// 2026-09-27 - 204,388 to 223,517 gas per transaction. The lowest, less the base transaction, is
+// used for every maker, so the fee built on it can only err in the user's favour.
+export const BASE_TX_GAS = 21_000n;
+export const MAKER_SWAP_GAS = 183_388n;
+
+/** "Uniswap v3 · 0.05%" - the name a trader would recognise, from the pool's own fee tier. */
+export function venueName(v) {
+  const pct = (fee) => `${(Number(fee) / 10_000).toFixed(Number(fee) % 100 === 0 ? 2 : 3).replace(/0$/, "")}%`;
+  if (v.kind === "v3") return `Uniswap v3 · ${pct(v.fee)}`;
+  if (v.kind === "v4") return `Uniswap v4 · ${pct(v.fee)}`;
+  return "Fermi maker";
+}
+
 const pad = (h) => String(h).replace(/^0x/, "").toLowerCase().padStart(64, "0");
 const padInt = (n) => pad(BigInt(n).toString(16));
 const padInt24 = (n) => { const b = BigInt(n); return pad((b < 0n ? (1n << 256n) + b : b).toString(16)); };
@@ -105,8 +121,9 @@ function greedy(ladders, amountIn) {
   let total = 0n;
   for (let vi = 0; vi < ladders.length; vi++) {
     if (!alloc[vi]) continue;
-    legs.push({ venue: ladders[vi].id, family: ladders[vi].family, kind: ladders[vi].kind,
-                amountIn: (chunk * BigInt(alloc[vi])).toString(), amountOut: f(vi, alloc[vi]).toString() });
+    legs.push({ venue: ladders[vi].id, family: ladders[vi].family, kind: ladders[vi].kind, name: ladders[vi].name,
+                amountIn: (chunk * BigInt(alloc[vi])).toString(), amountOut: f(vi, alloc[vi]).toString(),
+                gasEstimate: String(ladders[vi].gas[alloc[vi] - 1] ?? MAKER_SWAP_GAS) });
     total += f(vi, alloc[vi]);
   }
   return { total, legs, chunk };
@@ -133,23 +150,35 @@ export async function onChainQuote(ticker, direction, amountIn) {
   const ladders = venues.map((v) => ({
     id: v.kind === "v4" ? v.poolId : v.addr,
     family: v.family || (v.kind === "v4" ? "uniswap-v4" : "uniswapv3"),
-    kind: v.kind, points: new Array(K).fill(null),
+    kind: v.kind, name: venueName(v), points: new Array(K).fill(null), gas: new Array(K).fill(null),
   }));
   jobs.forEach((j, i) => {
     const r = res[i];
     if (!r || r === "0x") return;
-    let out;
-    try { out = BigInt("0x" + w(r, 0)); } catch { return; }
-    if (out > 0n) ladders[venues.indexOf(j.v)].points[j.n - 1] = out;
+    let out, gas;
+    try {
+      out = BigInt("0x" + w(r, 0));
+      // QuoterV2 returns (amountOut, sqrtPriceX96After, ticksCrossed, gasEstimate);
+      // V4Quoter returns (amountOut, gasEstimate); a maker quote returns amountOut alone.
+      gas = j.v.kind === "v3" ? BigInt("0x" + w(r, 3)) : j.v.kind === "v4" ? BigInt("0x" + w(r, 1)) : MAKER_SWAP_GAS;
+    } catch { return; }
+    if (out > 0n) {
+      const L = ladders[venues.indexOf(j.v)];
+      L.points[j.n - 1] = out;
+      L.gas[j.n - 1] = gas > 0n ? gas : MAKER_SWAP_GAS;
+    }
   });
 
   const unmeasured = ladders.reduce((a, L) => a + L.points.filter((p) => p === null).length, 0);
-  let bestSingle = null, bestId = null, bestFamily = null;
+  let bestSingle = null, bestId = null, bestFamily = null, bestL = null;
   for (const L of ladders) {
     const full = L.points[K - 1];
     if (full === null) continue;
-    if (bestSingle === null || full > bestSingle) { bestSingle = full; bestId = L.id; bestFamily = L.family; }
+    if (bestSingle === null || full > bestSingle) { bestSingle = full; bestId = L.id; bestFamily = L.family; bestL = L; }
   }
+  // the best single pool as one leg - what the user would send themselves - with its own gas
+  const singleLeg = () => ({ venue: bestId, family: bestFamily, kind: bestL?.kind ?? "v3", name: bestL?.name ?? null,
+    amountIn: amountIn.toString(), amountOut: bestSingle.toString(), gasEstimate: String(bestL?.gas[K - 1] ?? MAKER_SWAP_GAS) });
   let split = greedy(ladders, amountIn);
 
   // INVARIANT: partitio is never worse than the best single venue. Greedy stops early when the
@@ -157,10 +186,7 @@ export async function onChainQuote(ticker, direction, amountIn) {
   // split look thin. If that happens, route the whole order to the best single venue instead —
   // a partial split is a measurement failure, not a price.
   if (bestSingle !== null && split.total < bestSingle) {
-    const L = ladders.find((x) => x.id === bestId);
-    split = { total: bestSingle, chunk,
-      legs: [{ venue: bestId, family: bestFamily, kind: L?.kind ?? "v3",
-               amountIn: amountIn.toString(), amountOut: bestSingle.toString() }] };
+    split = { total: bestSingle, chunk, legs: [singleLeg()] };
   }
 
   // The legs must sum to EXACTLY `amountIn` (the spendable amount) or GaslessEntry reverts
@@ -171,10 +197,7 @@ export async function onChainQuote(ticker, direction, amountIn) {
     split.legs = scaleLegsToSpendable(split.legs, amountIn);
   } else if (bestSingle !== null) {
     // every rung unmeasured but one venue answered at full size
-    const L = ladders.find((x) => x.id === bestId);
-    split = { total: bestSingle, chunk,
-      legs: [{ venue: bestId, family: bestFamily, kind: L?.kind ?? "v3",
-               amountIn: amountIn.toString(), amountOut: bestSingle.toString() }] };
+    split = { total: bestSingle, chunk, legs: [singleLeg()] };
   }
 
   split.legs = withProofs(split.legs);
@@ -204,9 +227,35 @@ export async function onChainQuote(ticker, direction, amountIn) {
     ticker, direction, amountIn: amountIn.toString(), legSum: legSum.toString(),
     legsCoverOrder: legSum === amountIn,
     bestSingle: bestSingle?.toString() ?? null, bestSingleVenue: bestId, bestSingleFamily: bestFamily,
+    bestSingleName: bestL?.name ?? null,
+    // gas a user would pay to send the best single pool's swap themselves, and the split's own
+    bestSingleGas: bestL ? String(BASE_TX_GAS + (bestL.gas[K - 1] ?? MAKER_SWAP_GAS)) : null,
+    routeGas: String(BASE_TX_GAS + split.legs.reduce((a, l) => a + BigInt(l.gasEstimate ?? MAKER_SWAP_GAS), 0n)),
     partitio: split.total.toString(), legs: split.legs, venuesUsed: split.legs.length,
     unmeasuredRungs: unmeasured, totalRungs: ladders.length * K,
     oracleOut: oracleOut?.toString() ?? null, oracleDevBps, oracleUpdatedAt: updatedAt,
     oracleFeed: feed?.feed ?? null, oracleDesc: feed?.desc ?? null,
   };
+}
+
+// ---------------------------------------------------------------- ETH, in USDG
+
+const WETH = "0x0Bd7D308f8E1639FAb988df18A8011f41EAcAD73";
+let ethCache = { at: 0, perEth: null };
+/**
+ * USDG base units per 1 ETH, from QuoterV2 on the WETH/USDG pools (0.01% first, then 0.05%).
+ * Used for one thing only - expressing gas in USDG - so a minute of staleness is immaterial.
+ */
+export async function usdgPerEth() {
+  if (ethCache.perEth && Date.now() - ethCache.at < 60_000) return ethCache.perEth;
+  for (const fee of [100, 500]) {
+    const probe = 10n ** 15n;   // 0.001 WETH
+    const r = await call("eth_call", [{ to: QUOTER_V2,
+      data: SEL_V3 + pad(WETH) + pad(USDG) + padInt(probe) + padInt(fee) + pad("0") }, "latest"]).catch(() => null);
+    if (!r || r === "0x") continue;
+    const out = BigInt("0x" + w(r, 0));
+    if (out > 0n) { ethCache = { at: Date.now(), perEth: out * 1000n }; return ethCache.perEth; }
+  }
+  if (ethCache.perEth) return ethCache.perEth;
+  throw new Error("no WETH/USDG quote - cannot price gas");
 }

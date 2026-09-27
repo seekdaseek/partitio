@@ -15,7 +15,7 @@ import { call, rpcStatus } from "./rpc.mjs";
 import { onChainQuote, tickers, HIDDEN } from "./quote.mjs";
 import { allAggregators } from "./aggregators.mjs";
 import { handleOrder } from "./submit.mjs";
-import { prepareOrder } from "./prepare.mjs";
+import { prepareOrder, previewQuote } from "./prepare.mjs";
 import { createSender, assertLocalAnvil } from "./sender.mjs";
 import { parseSignature, recoverTypedDataAddress, getAddress } from "viem";
 import { ORDER_TYPES, domainFor, normalizeOrder } from "./order.mjs";
@@ -233,8 +233,10 @@ let devWallet = null;
 if (process.env.PARTITIO_RPC_OVERRIDE) {
   await assertLocalAnvil(process.env.PARTITIO_RPC_OVERRIDE);
   const { privateKeyToAccount } = await import("viem/accounts");
-  // anvil development account #2 - public, worthless anywhere but a local fork
-  devWallet = privateKeyToAccount("0x5de4111afa1a4b94908f83103eb1f1706367c2e68ca870fc3fb9a804cdab365a");
+  // keccak256("partitio dev wallet - anvil only, worthless anywhere else"). NOT an anvil default
+  // account: those carry EIP-7702 sweeper delegations on 4663 mainnet, so on a fork the "user"
+  // would be a contract. This address has no code and no history on mainnet (checked 2026-09-27).
+  devWallet = privateKeyToAccount("0x04ec71c2115a8a26255adb16f4f294aeab9d63ac7b145416f6f988c4e6c827a2");
 }
 function asTyped(json) {
   const t = typeof json === "string" ? JSON.parse(json) : json;
@@ -286,9 +288,10 @@ async function placeOrder(body) {
   const owner = getAddress(signer).toLowerCase();
   const isTeam = CFG.TEAM_ADDRESSES.has(owner) ? 1 : 0;
   const d = getDaily.get(owner, today()) ?? { notional: 0, fills: 0 };
-  const notionalUsd = direction === "buy" ? Number(BigInt(order.amountIn)) / 1e6 : null;
+  // a buy's notional is its USDG in; a sell's is the USDG floor it signed (never more than it gets)
+  const notionalUsd = Number(direction === "buy" ? BigInt(order.amountIn) : BigInt(order.minOut)) / 1e6;
   if (d.fills >= CFG.MAX_DAILY_FILLS_PER_ADDRESS) return { code: 429, out: { error: "daily fill cap reached", cap: CFG.MAX_DAILY_FILLS_PER_ADDRESS } };
-  if (notionalUsd != null && d.notional + notionalUsd > CFG.MAX_DAILY_USD_PER_ADDRESS) {
+  if (d.notional + notionalUsd > CFG.MAX_DAILY_USD_PER_ADDRESS) {
     return { code: 429, out: { error: "daily size cap reached", capUsd: CFG.MAX_DAILY_USD_PER_ADDRESS } };
   }
 
@@ -300,12 +303,13 @@ async function placeOrder(body) {
   const status = out.sent ? (out.ok ? "confirmed" : "failed") : (code === 200 ? "simulated" : "refused");
   insOrder.run(new Date().toISOString(), out.orderHash ?? "unknown-" + Date.now(), owner, isTeam, direction, ticker,
     String(order.amountIn), notionalUsd, "partitio", null, String(order.maxFeeUsdg), out.txHash ?? null, status,
-    out.sent ? null : (out.reason || out.error || null));
+    out.sent ? null : [out.error, out.reason, out.detail].filter(Boolean).join(" | ").slice(0, 500) || null);
   if (out.sent && out.ok) {
-    bumpDaily.run(owner, today(), notionalUsd ?? 0);
+    bumpDaily.run(owner, today(), notionalUsd);
     refreshFloat().then(floatAlarm).catch(() => {});
   }
-  log(`order ${String(out.orderHash).slice(0, 10)} ${direction} ${ticker} owner ${owner.slice(0, 8)} -> ${status}${out.txHash ? " " + out.txHash : ""}`);
+  log(`order ${String(out.orderHash).slice(0, 10)} ${direction} ${ticker} owner ${owner.slice(0, 8)} -> ${status}${out.txHash ? " " + out.txHash : ""}` +
+    (out.sent ? "" : ` :: ${[out.error, out.reason, out.detail].filter(Boolean).join(" | ").slice(0, 300)}`));
   return { code, out: { ...out, isTeam: Boolean(isTeam) } };
 }
 
@@ -349,6 +353,14 @@ const server = http.createServer(async (req, res) => {
       const { code, out } = await handleQuote(body, h);
       return json(res, code, out);
     }
+    // Display-only: no wallet, nothing signable, and allowed above the beta cap so a judge can
+    // type 100000 and watch the split against the best single pool live.
+    if (u.pathname === "/api/preview" && req.method === "POST") {
+      if (!rateOk(h)) return json(res, 429, { error: "rate limited", perMinute: CFG.QUOTE_RATE_PER_MIN });
+      const body = await readBody(req);
+      const { code, out } = await previewQuote(body);
+      return json(res, code, { ...out, mode: mode() });
+    }
     if (u.pathname === "/api/prepare" && req.method === "POST") {
       if (!rateOk(h)) return json(res, 429, { error: "rate limited", perMinute: CFG.QUOTE_RATE_PER_MIN });
       const body = await readBody(req);
@@ -372,7 +384,7 @@ const server = http.createServer(async (req, res) => {
       return json(res, code, out);
     }
     if (req.method === "GET" && serveStatic(req, res, u.pathname)) return;
-    return json(res, 404, { error: "not found", routes: ["/api/health", "/api/tickers", "/api/quote", "/api/prepare", "/api/order", "/api/order/simulate", "/api/stats"] });
+    return json(res, 404, { error: "not found", routes: ["/api/health", "/api/tickers", "/api/preview", "/api/quote", "/api/prepare", "/api/order", "/api/order/simulate", "/api/stats"] });
   } catch (e) {
     log("request failed:", e.message);
     return json(res, 500, { error: String(e.message || e) });
