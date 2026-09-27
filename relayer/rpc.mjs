@@ -25,7 +25,16 @@ export async function call(method, params, { timeoutMs = 20000 } = {}) {
       });
       if (r.status === 429) { lastErr = new Error("429"); continue; }
       const j = await r.json();
-      if (j.error) { lastErr = new Error(j.error.message); if (/limit|quota|credit/i.test(j.error.message)) continue; throw lastErr; }
+      if (j.error) {
+        // Keep the node's revert payload. Throwing only the message dropped `error.data`, so every
+        // simulated revert reached explainRevert as "unknown" - found on the fork, where a resubmit
+        // of a filled order was refused correctly but could not say why.
+        lastErr = new Error(j.error.message);
+        lastErr.code = j.error.code;
+        lastErr.data = j.error.data;
+        if (/limit|quota|credit/i.test(j.error.message)) continue;
+        throw lastErr;
+      }
       healthy[i] = true;
       return j.result;
     } catch (e) {

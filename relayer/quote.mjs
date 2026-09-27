@@ -10,6 +10,7 @@ import path from "node:path";
 import { batch, call } from "./rpc.mjs";
 import { USDG, QUOTER_V2, V4_QUOTER } from "./config.mjs";
 import { scaleLegsToSpendable } from "./order.mjs";
+import { committed, legVenue } from "./venues.mjs";
 
 const HERE = path.dirname(new URL(import.meta.url).pathname);
 const REG = JSON.parse(fs.readFileSync(path.join(HERE, "registry.json"), "utf8"));
@@ -38,12 +39,29 @@ export function tickers() {
   return Object.keys(TOK.tokens).filter((t) => !HIDDEN.has(t) && FEEDS[t]);
 }
 
+// Only venues committed in the deployed router's VENUE_ROOT may be quoted. A venue outside the root
+// quotes fine and then reverts BadVenueProof on-chain - after the relayer has paid for the attempt.
+// Before deployment (no relayer/venues.json yet) the registry filter alone applies, which is what
+// the quote-only preview has always done.
+const isCommitted = (id) => { const c = committed(); return !c || c.byId.has(String(id).toLowerCase()); };
+
 function venuesFor(ticker) {
-  const v3 = REG.v3.filter((v) => v.ticker === ticker && v.quote === "USDG");
-  const v4 = REG.v4.filter((v) => v.ticker === ticker && v.quote === "USDG");
+  const v3 = REG.v3.filter((v) => v.ticker === ticker && v.quote === "USDG" && isCommitted(v.addr));
+  const v4 = REG.v4.filter((v) => v.ticker === ticker && v.quote === "USDG" && isCommitted(v.poolId));
   const amm = [...v3, ...v4].sort((a, b) => (BigInt(b.liquidity) > BigInt(a.liquidity) ? 1 : -1)).slice(0, MAX_VENUES);
-  const mk = (MAKERS[ticker] || []).map((m) => ({ kind: "maker", family: "fermi-prop", ...m }));
+  const mk = (MAKERS[ticker] || []).filter((m) => isCommitted(m.addr))
+    .map((m) => ({ kind: "maker", family: "fermi-prop", ...m }));
   return [...amm, ...mk];
+}
+
+/** Attach the struct and Merkle proof the contract checks. A leg without one is a relayer bug. */
+function withProofs(legs) {
+  if (!committed()) return legs;
+  return legs.map((l) => {
+    const lv = legVenue(l.venue);
+    if (!lv) throw new Error(`leg venue ${l.venue} is not in the committed root`);
+    return { ...l, ...lv };
+  });
 }
 
 function quoteCall(v, tokenIn, tokenOut, amountIn) {
@@ -154,6 +172,8 @@ export async function onChainQuote(ticker, direction, amountIn) {
       legs: [{ venue: bestId, family: bestFamily, kind: L?.kind ?? "v3",
                amountIn: amountIn.toString(), amountOut: bestSingle.toString() }] };
   }
+
+  split.legs = withProofs(split.legs);
 
   // Chainlink reference and the expected deviation at this size — shown in the preview so the
   // user's band can cover real impact instead of the guard rejecting it.

@@ -1,0 +1,19 @@
+{
+ "at": "2026-09-27T17:35:14.003Z",
+ "node": "anvil/v1.8.1",
+ "failures": 0,
+ "gas": {
+  "buy": "413503",
+  "sell": "414384"
+ },
+ "deployGas": {
+  "router": "3113883",
+  "entry": "2293623"
+ },
+ "sender": {
+  "sent": 6,
+  "replaced": 2,
+  "reverted": 0,
+  "failed": 0
+ }
+}

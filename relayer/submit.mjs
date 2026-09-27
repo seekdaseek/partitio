@@ -17,8 +17,12 @@ import { call } from "./rpc.mjs";
 import { onChainQuote, HIDDEN } from "./quote.mjs";
 import {
   ORDER_TYPES, domainFor, normalizeOrder, spendableFor, scaleLegsToSpendable,
-  rejectReasonForMarketOrder, MAX_SLIPPAGE_BPS,
+  rejectReasonForMarketOrder, MAX_SLIPPAGE_BPS, hashOrder,
 } from "./order.mjs";
+import { createLocks } from "./sender.mjs";
+
+// One per process: the relayer is a single process, and `executed` on-chain is the durable record.
+const LOCKS = createLocks();
 
 const HERE = path.dirname(new URL(import.meta.url).pathname);
 
@@ -129,7 +133,7 @@ export function ownerRateOk(owner, maxPerMin = 6) {
  * @returns {{code:number, out:object}} — `out.sent` is only ever true when a transaction was
  * actually broadcast, which requires `send` to be supplied by the caller.
  */
-export async function handleOrder(body, { send = null, entryAddress = CFG.GASLESS_ENTRY } = {}) {
+export async function handleOrder(body, { send = null, entryAddress = CFG.GASLESS_ENTRY, locks = LOCKS } = {}) {
   const t0 = Date.now();
   const { order, auth, fee, slippageBps, ticker, direction } = body || {};
 
@@ -216,30 +220,66 @@ export async function handleOrder(body, { send = null, entryAddress = CFG.GASLES
     return { code: 400, out: { error: "could not encode fill", detail: String(e.message || e), sent: false } };
   }
 
-  const from = body.relayerAddress ?? CFG.RELAYER_ADDRESS ?? null;
-  const sim = await simulate({ to: entryAddress, from, data });
-  if (!sim.ok) {
-    const err = explainRevert(sim.data);
+  // 5. ONE FILL AT A TIME per order and per wallet. Both locks are taken before the first
+  //    simulation and held until the transaction is mined or abandoned: two submissions of the same
+  //    order, or two orders spending the same balance, both simulate cleanly against today's state
+  //    and one of them then reverts on-chain having paid for its gas.
+  const orderHash = hashOrder(order, entryAddress, CFG.CHAIN_ID);
+  const busy = locks.acquire(orderHash, order.owner);
+  if (busy) return { code: busy.code, out: { error: "not sent", reason: busy.reason, orderHash, sent: false } };
+
+  try {
+    const from = send?.address ?? body.relayerAddress ?? CFG.RELAYER_ADDRESS ?? null;
+    const sim = await simulate({ to: entryAddress, from, data });
+    if (!sim.ok) {
+      const err = explainRevert(sim.data);
+      return {
+        code: 422,
+        out: {
+          error: "would revert — not sent",
+          reason: refusalSentence(err, { direction, oracleDevBps: quote?.oracleDevBps }),
+          revert: err,
+          orderHash,
+          sent: false,
+          txs: 0,
+          ms: Date.now() - t0,
+        },
+      };
+    }
+
+    // 6. Only now may anything be broadcast, and only if the caller supplied a sender.
+    if (!send) {
+      return { code: 200, out: { simulated: true, sent: false, willReceive: sim.result ?? null, orderHash,
+        legs: legs.length, spendable: spendable.toString(), ms: Date.now() - t0 } };
+    }
+    let r;
+    try {
+      // re-simulated INSIDE the send queue, immediately before signing: state may have moved
+      // while this fill waited behind another one
+      r = await send.send({ to: entryAddress, data, label: orderHash.slice(0, 10),
+        resimulate: () => simulate({ to: entryAddress, from: send.address, data }) });
+    } catch (e) {
+      if (e.notSent) {
+        const err = explainRevert(e.revert);
+        return { code: 422, out: { error: "would revert — not sent",
+          reason: refusalSentence(err, { direction, oracleDevBps: quote?.oracleDevBps }),
+          revert: err, orderHash, sent: false, txs: 0, ms: Date.now() - t0 } };
+      }
+      return { code: 502, out: { error: "send failed", detail: String(e.message || e).slice(0, 300),
+        orderHash, sent: false, ms: Date.now() - t0 } };
+    }
     return {
-      code: 422,
+      code: r.ok ? 200 : 500,
       out: {
-        error: "would revert — not sent",
-        reason: refusalSentence(err, { direction, oracleDevBps: quote?.oracleDevBps }),
-        revert: err,
-        sent: false,
-        txs: 0,
-        ms: Date.now() - t0,
+        simulated: true, sent: true, mined: true, ok: r.ok, orderHash,
+        txHash: r.hash, gasUsed: r.gasUsed.toString(), effectiveGasPrice: r.effectiveGasPrice.toString(),
+        replacements: r.replacements, nonce: r.nonce, attempts: r.attempts, ms: Date.now() - t0,
+        ...(r.ok ? {} : { error: "mined but reverted — the simulation and the chain disagreed" }),
       },
     };
+  } finally {
+    locks.release(orderHash, order.owner);
   }
-
-  // 5. Only now may anything be broadcast, and only if the caller supplied a sender.
-  if (!send) {
-    return { code: 200, out: { simulated: true, sent: false, willReceive: sim.result ?? null,
-      legs: legs.length, spendable: spendable.toString(), ms: Date.now() - t0 } };
-  }
-  const txHash = await send({ to: entryAddress, data });
-  return { code: 200, out: { simulated: true, sent: true, txHash, ms: Date.now() - t0 } };
 }
 
 function normalizeAuth(a) {

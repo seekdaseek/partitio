@@ -7,11 +7,15 @@ const readIf = (p) => { try { const v = fs.readFileSync(p, "utf8").trim(); retur
 
 // QuickNode for relayer work; canonical and publicnode as fallbacks. The QuickNode free trial
 // ends ~Oct 24 and results land Oct 25, so the fallback is automatic rather than a manual fix.
-export const RPCS = [
-  readIf(path.join(HERE, "qn_rpc")) || readIf(`${process.env.HOME}/.config/partitio/qn_rpc`),
-  "https://robinhood-rpc.publicnode.com",
-  "https://rpc.mainnet.chain.robinhood.com",
-].filter(Boolean);
+// PARTITIO_RPC_OVERRIDE replaces the whole list - it exists for the local anvil fork, where a
+// fallback to a mainnet endpoint would silently send a "test" somewhere real.
+export const RPCS = process.env.PARTITIO_RPC_OVERRIDE
+  ? [process.env.PARTITIO_RPC_OVERRIDE]
+  : [
+      readIf(path.join(HERE, "qn_rpc")) || readIf(`${process.env.HOME}/.config/partitio/qn_rpc`),
+      "https://robinhood-rpc.publicnode.com",
+      "https://rpc.mainnet.chain.robinhood.com",
+    ].filter(Boolean);
 
 export const HOT_KEY_FILE = path.join(HERE, "hotkey");   // 0600, generated ON the VPS
 export const DB_PATH = process.env.PARTITIO_RELAYER_DB || path.join(HERE, "relayer.db");
