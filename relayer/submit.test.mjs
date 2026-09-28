@@ -11,7 +11,7 @@
 
 import { encodeErrorResult } from "viem";
 import { privateKeyToAccount } from "viem/accounts";
-import { handleOrder, explainRevert, refusalSentence, ownerRateOk } from "./submit.mjs";
+import { handleOrder, explainRevert, refusalSentence, ownerRateOk, fillResult } from "./submit.mjs";
 import { ORDER_TYPES, domainFor, normalizeOrder } from "./order.mjs";
 
 let failures = 0;
@@ -201,6 +201,29 @@ const stockSentence = refusalSentence(stockShort, { direction: "sell", ticker: "
 check("a stock shortfall names the ticker and both amounts",
   /not enough AAPL/.test(stockSentence) && /holds 0,/.test(stockSentence) && /0\.002905609090167306/.test(stockSentence), stockSentence);
 console.log("    " + stockSentence);
+
+// THE FILL RESULT: the demo-video buy's receipt, reduced to its Transfer logs (block 74906068).
+// Owner deltas only; the entry's and the relayer's own transfers must not leak into them.
+{
+  const T = "0xddf252ad1be2c89b69c2b068fc378daa952ba7f163c4a11628f55a4df523b3ef";
+  const top = (a) => "0x" + a.toLowerCase().replace(/^0x/, "").padStart(64, "0");
+  const log = (token, from, to, v) => ({ address: token, topics: [T, top(from), top(to)], data: "0x" + v.toString(16).padStart(64, "0") });
+  const USDG = "0x5fc5360D0400a0Fd4f2af552ADD042D716F1d168", AAPL = "0xaF3D76f1834A1d425780943C99Ea8A608f8a93f9";
+  const OWNER = "0x0032fB2549Eeb8f6E41106c595d5B1b99bBB7554", ENTRY = "0x9645388051ece3a437D5E224B17c156b16840AC7";
+  const RELAYER = "0x8155Fe3D74e5D97DC3E6dE119c497A24Aca62216", POOL = "0x2F00000000000000000000000000000000004A07";
+  const buy = { blockNumber: "0x476f9d4", logs: [
+    log(USDG, OWNER, ENTRY, 990000n), log(USDG, ENTRY, POOL, 985050n), log(AAPL, POOL, ENTRY, 2884009347528764n),
+    log(AAPL, ENTRY, OWNER, 2884009347528764n), log(USDG, ENTRY, RELAYER, 4950n),
+    { address: USDG, topics: ["0x8c5be1e5ebec7d5bd14f71427d1e84f3dd0314c0f7b2291e5b200ac8c7c3b925", top(OWNER), top(ENTRY)], data: "0x" + "0".repeat(64) } ] };
+  const f = fillResult(buy, OWNER, USDG, AAPL);
+  check("a buy's fill result is the owner's exact deltas", f.block === "74906068" && f.usdg === "-990000" && f.stock === "2884009347528764", JSON.stringify(f));
+  const sell = { blockNumber: "0x476fad2", logs: [
+    log(AAPL, OWNER, ENTRY, 2884009347528764n), log(USDG, ENTRY, RELAYER, 4896n), log(USDG, ENTRY, OWNER, 979276n) ] };
+  const g = fillResult(sell, OWNER.toLowerCase(), USDG, AAPL);
+  check("a sell's fill result is the owner's exact deltas", g.block === "74906322" && g.usdg === "979276" && g.stock === "-2884009347528764", JSON.stringify(g));
+  const other = fillResult(buy, RELAYER, USDG, AAPL);
+  check("another address's deltas come from its own transfers only", other.usdg === "4950" && other.stock === "0", JSON.stringify(other));
+}
 
 // ---------------------------------------------------------------- result
 

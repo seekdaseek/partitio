@@ -272,24 +272,71 @@ h1{font:400 36px/1.12 var(--serif);letter-spacing:-.015em;margin:0 0 8px}
 
   // ---------------------------------------------------------------- reads
   const pad = (a) => a.toLowerCase().replace(/^0x/, "").padStart(64, "0");
-  async function erc20Bal(token, who) {
-    const r = await eth().request({ method: "eth_call", params: [{ to: token, data: "0x70a08231" + pad(who) }, "latest"] });
+  const hex = (n) => "0x" + n.toString(16);
+  const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
+  async function erc20Bal(token, who, tag) {
+    const r = await eth().request({ method: "eth_call", params: [{ to: token, data: "0x70a08231" + pad(who) }, tag] });
     return BigInt(r);
   }
+  async function readBal(who, t, tag) {
+    const tok = st.tokens[t];
+    const [u, s, e] = await Promise.all([erc20Bal(USDG, who, tag), tok ? erc20Bal(tok, who, tag) : 0n,
+      eth().request({ method: "eth_getBalance", params: [who, tag] }).then(BigInt)]);
+    return { usdg: u, stock: s, eth: e, ticker: t, account: who };
+  }
+  // A wallet answers "latest" from its own idea of the head, which can trail the relayer's by
+  // seconds (MetaMask refreshes it on a timer). Read right after a fill, it hands back the balances
+  // from before the fill: that is what the demo recording showed after both fills. So once a fill
+  // has landed, no read may be older than the fill's block (st.floor).
   async function balances() {
     if (!st.account) { $("hold").innerHTML = ""; return; }
-    const who = st.account, t = $("ticker").value, tok = st.tokens[t];
-    const [u, s, e] = await Promise.all([erc20Bal(USDG, who), tok ? erc20Bal(tok, who) : 0n,
-      eth().request({ method: "eth_getBalance", params: [who, "latest"] }).then(BigInt)]);
+    const who = st.account, t = $("ticker").value;
+    let tag = "latest";
+    if (st.floor) {
+      const head = BigInt(await eth().request({ method: "eth_blockNumber", params: [] }));
+      tag = hex(head > st.floor ? head : st.floor);
+    }
+    const b = await readBal(who, t, tag);
     if (who !== st.account || t !== $("ticker").value) return;   // a newer read is on its way
-    st.bal = { usdg: u, stock: s, eth: e, ticker: t, account: who };
-    const buy = st.side === "buy";
+    st.bal = b;
+    renderHold();
+  }
+  function renderHold() {
+    const b = st.bal;
+    if (!b) return;
+    const buy = st.side === "buy", t = b.ticker;
     const max = (have) => (have > 0n ? ` <button class="link" id="max">Max</button>` : "");
-    $("hold").innerHTML = `You hold <b>${holdUsdg(u)} USDG</b>${buy ? max(u) : ""} · <b>${fmt(s, 18, 6)} ${t}</b>${buy ? "" : max(s)} · ` +
-      `<span class="${e === 0n ? "zero" : ""}"><b>${fmt(e, 18, 6)} ETH</b>${e === 0n ? " — and you don't need any" : ""}</span>`;
+    $("hold").innerHTML = `You hold <b>${holdUsdg(b.usdg)} USDG</b>${buy ? max(b.usdg) : ""} · <b>${fmt(b.stock, 18, 6)} ${t}</b>${buy ? "" : max(b.stock)} · ` +
+      `<span class="${b.eth === 0n ? "zero" : ""}"><b>${fmt(b.eth, 18, 6)} ETH</b>${b.eth === 0n ? " — and you don't need any" : ""}</span>`;
     const m = $("max");
-    if (m) m.onclick = () => { userAct(); $("amt").value = (buy ? fmt(u, 6, 6) : fmt(s, 18, 18)).replace(/,/g, ""); schedule(); };
+    if (m) m.onclick = () => { userAct(); $("amt").value = (buy ? fmt(b.usdg, 6, 6) : fmt(b.stock, 18, 18)).replace(/,/g, ""); schedule(); };
     refreshButton();
+  }
+  // After a fill: the balances its own receipt implies, on screen at once (the relayer returns the
+  // owner's exact deltas), then confirmed by a read AT the fill's block, retried until the wallet's
+  // node has that block. Returns false when the relayer sent no fill result.
+  function applyFill(q, out) {
+    const f = out.fill;
+    if (!f) return false;
+    st.floor = BigInt(f.block);
+    const b = st.bal;
+    if (b && b.account === st.account && b.ticker === q.ticker) {
+      st.bal = { ...b, usdg: b.usdg + BigInt(f.usdg), stock: b.stock + BigInt(f.stock) };
+      renderHold();
+    }
+    return true;
+  }
+  async function confirmFill(block) {
+    for (let i = 0; i < 40; i++) {
+      const who = st.account, t = $("ticker").value;
+      try {
+        const b = await readBal(who, t, hex(block));
+        // skip it if the wallet, the stock or a newer fill moved on while this read was out
+        if (who === st.account && t === $("ticker").value && st.floor === block) { st.bal = b; renderHold(); }
+        return true;
+      } catch { await sleep(750); }
+    }
+    return false;
   }
 
   // Checked before anything is signed: signing for more than the wallet holds only buys a refusal.
@@ -483,7 +530,10 @@ h1{font:400 36px/1.12 var(--serif);letter-spacing:-.015em;margin:0 0 8px}
         // how the 14:04 refusal on 2026-09-28 happened), so the form empties and the receipt stays.
         clearTimeout(timer); st.seq++; st.loading = false; st.preview = null;
         $("amt").value = ""; renderIdle("Type an amount to see the route.");
-        await balances().catch(() => {});   // a failed read must not replace the receipt
+        // the new balances at once, from the fill itself; the confirming read runs in the background
+        // (a failed read never replaces the receipt)
+        if (applyFill(q, out)) confirmFill(st.floor).catch(() => {});
+        else await balances().catch(() => {});
       } else {
         step(3, "");
         note("no", FRIENDLY[out.error] || (out.reason ? cap1(out.reason) + "." : null) || out.error || "Not sent.");

@@ -136,6 +136,32 @@ export function refusalSentence(err, ctx = {}) {
   }
 }
 
+// ---------------------------------------------------------------- what a fill did
+
+const TRANSFER_TOPIC = "0xddf252ad1be2c89b69c2b068fc378daa952ba7f163c4a11628f55a4df523b3ef";
+
+/**
+ * The owner's balance changes, read from the fill's own receipt: every Transfer of `usdg` or
+ * `stock` from or to `owner`. The page shows these at once. A wallet's "latest" can lag the block
+ * the relayer just saw by seconds (MetaMask answers it from a block number it refreshes on a
+ * timer), which is how the demo recording showed pre-fill balances after both fills.
+ * @returns {{block:string, usdg:string, stock:string}} signed deltas in base units
+ */
+export function fillResult(receipt, owner, usdg, stock) {
+  const me = String(owner).toLowerCase();
+  const key = { [String(usdg).toLowerCase()]: "usdg", [String(stock).toLowerCase()]: "stock" };
+  const delta = { usdg: 0n, stock: 0n };
+  for (const l of receipt?.logs ?? []) {
+    const k = key[String(l.address).toLowerCase()];
+    if (!k || l.topics?.[0] !== TRANSFER_TOPIC || l.topics.length !== 3) continue;
+    const from = "0x" + l.topics[1].slice(26).toLowerCase(), to = "0x" + l.topics[2].slice(26).toLowerCase();
+    const v = BigInt(l.data);
+    if (from === me) delta[k] -= v;
+    if (to === me) delta[k] += v;
+  }
+  return { block: BigInt(receipt.blockNumber).toString(), usdg: delta.usdg.toString(), stock: delta.stock.toString() };
+}
+
 // ---------------------------------------------------------------- per-address limits
 
 const perOwner = new Map();
@@ -294,6 +320,8 @@ export async function handleOrder(body, { send = null, entryAddress = CFG.GASLES
       out: {
         simulated: true, sent: true, mined: true, ok: r.ok, orderHash,
         txHash: r.hash, gasUsed: r.gasUsed.toString(), effectiveGasPrice: r.effectiveGasPrice.toString(),
+        ...(r.ok ? { fill: fillResult(r.receipt, order.owner, CFG.USDG,
+          order.tokenIn.toLowerCase() === CFG.USDG.toLowerCase() ? order.tokenOut : order.tokenIn) } : {}),
         replacements: r.replacements, nonce: r.nonce, attempts: r.attempts, ms: Date.now() - t0,
         ...(r.ok ? {} : { error: "mined but reverted — the simulation and the chain disagreed" }),
       },
