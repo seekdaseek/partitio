@@ -5,6 +5,8 @@ dashes, no parentheses and no underscores. The submission fields are each under 
 the project page fields run longer. The project has existed on HackQuest since
 September 27, 2026, editor at projects/setup/5c822f6e-afad-454f-adb5-cc7d2e6ea625, and Sergiu
 connected the payout wallet on September 28. Fill the fields below in that editor.
+The project was submitted on September 28, 2026, to the Overall Prize, Promising Products and Grants
+tracks; the dashboard keeps it editable through Edit Submission until the deadline.
 
 ========================================================================
 PROJECT PAGE - the HackQuest project page fields, pasted word for word
@@ -43,6 +45,9 @@ Solidity, Node, Foundry, OpenZeppelin, Chainlink, Uniswap, USDG, Robinhood Chain
 PRODUCT CATEGORY
 DeFi, RWA, Infra
 
+TEAM INTRO - on the Team tab
+I am Sergiu O, a solo builder shipping under ochinimus. I have shipped on Solana, Base, Algorand, X Layer, Stellar and now Robinhood Chain: a paid x402 market data API, trading tools and apps for the Solana Seeker phone. partitio was built during this buildathon, from the first commit on September 24 to the mainnet deploy on September 27. Previous wins: LineWatch took 2nd of 182 in the TxODDS Trading Tools and Agents track, and docket won Best Use of HydraDB.
+
 ========================================================================
 SUBMISSION FIELDS
 ========================================================================
@@ -73,6 +78,9 @@ https://github.com/seekdaseek/partitio
 
 DEMO VIDEO
 https://youtu.be/dxhwqTnKBzo
+
+PITCH VIDEO
+https://youtu.be/LvRpVh2GbRk
 
 MAINNET TRADES - not a form field, and longer than the 300-character answers. For the video description.
 Shown in the demo video: a mainnet round trip from a wallet that holds no ETH. Buy https://robinhoodchain.blockscout.com/tx/0x44e45f1ad396a0d4c37f5a9fc0ce8301d4fb1011702c7cb3d949e15d39ee70fe Sell https://robinhoodchain.blockscout.com/tx/0x2504a2e36d1ef0663e4750677dae2fd4b9f079d0727995620300b4507e326e2b The first round trip, same wallet, 90 minutes earlier: Buy https://robinhoodchain.blockscout.com/tx/0x5f8d8c0eff1e5504c346511c7ce1d8cbad775f318cfc5e2ac521ed92ef8cdc56 Sell https://robinhoodchain.blockscout.com/tx/0x668e72767a4ff11981c523954641b8b0de43c1c301ee5cea043e8152918196b2
