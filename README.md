@@ -106,6 +106,11 @@ recomputes the headline from the committed snapshot, with no database and no RPC
 - **Two tickers are withheld.** GLD and RDDT are priced by feeds derived from the very pools a trade
   would move, so a Chainlink-style floor cannot guard them.
 
+## Builder feedback
+
+Five things Robinhood Chain, Paxos and Chainlink could change for the next builder, each measured
+here and linked to its evidence: [docs/FEEDBACK.md](docs/FEEDBACK.md).
+
 ## Repository map
 
 | path | what |
@@ -115,4 +120,4 @@ recomputes the headline from the committed snapshot, with no database and no RPC
 | `evidence/` | the measurement engine behind the headline, and its snapshot |
 | `script/` | deploy inputs generated and verified on-chain, and the deploy script |
 | `test/` | unit, review, hunt, fork and fuzz tests |
-| `docs/` | review, fixes, gates, deployments, and the history-rewrite map |
+| `docs/` | review, fixes, gates, deployments, builder feedback, and the history-rewrite map |

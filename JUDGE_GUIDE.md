@@ -75,8 +75,14 @@ integer for integer. The rules it applies, so you can judge them rather than the
 
 Two mainnet round trips on Monday, September 28, 2026, both from our demo wallet
 [`0x0032fB2549Eeb8f6E41106c595d5B1b99bBB7554`](https://robinhoodchain.blockscout.com/address/0x0032fB2549Eeb8f6E41106c595d5B1b99bBB7554),
-which has never held ETH: its balance is 0 ETH and its nonce is 0, before and after. All four
-transactions were sent, and their gas paid, by the relayer
+which has never held ETH. Blockscout shows no
+[coin balance history](https://robinhoodchain.blockscout.com/address/0x0032fB2549Eeb8f6E41106c595d5B1b99bBB7554?tab=coin_balance_history)
+and no [internal transactions](https://robinhoodchain.blockscout.com/address/0x0032fB2549Eeb8f6E41106c595d5B1b99bBB7554?tab=internal_txns)
+for it, and no transactions at all: no ETH has ever arrived. Its nonce is 0, so it has never sent
+a transaction or delegated to code, and nothing could have spent ETH from it. For contrast,
+[the same tab for the relayer](https://robinhoodchain.blockscout.com/address/0x8155Fe3D74e5D97DC3E6dE119c497A24Aca62216?tab=coin_balance_history)
+lists every gas payment it has made. All four transactions were sent, and
+their gas paid, by the relayer
 [`0x8155Fe3D74e5D97DC3E6dE119c497A24Aca62216`](https://robinhoodchain.blockscout.com/address/0x8155Fe3D74e5D97DC3E6dE119c497A24Aca62216).
 The relayer counts the demo wallet's orders as ours, not as users'.
 
@@ -96,3 +102,5 @@ and still 0 ETH.
 ---
 
 What partitio does **not** claim is listed in the [README](README.md#what-it-does-not-claim).
+Builder feedback for Robinhood Chain, Paxos and Chainlink, each item with its evidence:
+[docs/FEEDBACK.md](docs/FEEDBACK.md).
