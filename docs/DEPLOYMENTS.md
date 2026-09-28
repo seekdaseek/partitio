@@ -29,22 +29,28 @@ mainnet charged.
 Cost: 0.000109315 ETH at 0.020 gwei. Deployer `0x7a7c915D8dA490c48915Fe735DDf41f8Dea83dC2`:
 0.000698007 ETH before, 0.000588692 ETH after, nonce 11 -> 13.
 
-### First mainnet trades (2026-09-28)
+### Mainnet trades (2026-09-28)
 
 From our demo wallet `0x0032fB2549Eeb8f6E41106c595d5B1b99bBB7554` (0 ETH and nonce 0 before and
 after), sent and paid for by the relayer `0x8155Fe3D74e5D97DC3E6dE119c497A24Aca62216`. Read back
-from the receipts; the relayer records both as team orders.
+from the receipts; the relayer records every one of them as a team order.
 
 | step | tx | block | in | out | relayer fee | gas | ETH, paid by the relayer |
 |---|---|---|---|---|---|---|---|
 | buy AAPL | [`0x5f8d8c0e…8cdc56`](https://robinhoodchain.blockscout.com/tx/0x5f8d8c0eff1e5504c346511c7ce1d8cbad775f318cfc5e2ac521ed92ef8cdc56) | 74852093 | 1 USDG | 0.002905609090167306 AAPL | 0.005 USDG | 585,512 | 0.0000136822 |
 | sell AAPL | [`0x668e7276…8196b2`](https://robinhoodchain.blockscout.com/tx/0x668e72767a4ff11981c523954641b8b0de43c1c301ee5cea043e8152918196b2) | 74852963 | 0.002905609090167306 AAPL | 0.990099 USDG | 0.004947 USDG | 610,871 | 0.0000125058 |
+| demo video: buy AAPL | [`0x44e45f1a…ee70fe`](https://robinhoodchain.blockscout.com/tx/0x44e45f1ad396a0d4c37f5a9fc0ce8301d4fb1011702c7cb3d949e15d39ee70fe) | 74906068 | 0.99 USDG | 0.002884009347528764 AAPL | 0.00495 USDG | 396,696 | 0.0000087218 |
+| demo video: sell AAPL | [`0x2504a2e3…326e2b`](https://robinhoodchain.blockscout.com/tx/0x2504a2e36d1ef0663e4750677dae2fd4b9f079d0727995620300b4507e326e2b) | 74906322 | 0.002884009347528764 AAPL | 0.979276 USDG | 0.004896 USDG | 489,314 | 0.0000106680 |
 
 Two refusals followed, both before anything was sent. At 14:04:56 UTC the page let the wallet sign a
 second sell of AAPL it had already sold (`ERC20InsufficientBalance`). At 14:08:27 it let the wallet
 sign a buy of 1 USDG while holding 0.996536, and the relayer could not name USDG's own
 `InsufficientFunds()` (`0x356680b7`), so it said "unknown". Since then the page checks the balance
 before anything is signed, and the relayer names both errors.
+
+The demo video's round trip ran at 15:30 UTC on that fixed page (`bade27a`): two fills 26 seconds
+apart, and the relayer refused nothing. After it the demo wallet held 0.985812 USDG, 0 AAPL, 0 ETH,
+nonce 0, and the relayer 0.000354422 ETH.
 
 ---
 

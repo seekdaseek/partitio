@@ -56,10 +56,12 @@ Ownerless and immutable: no owner, no pause, no upgrade, no sweep.
 Deployed from tag [`deploy-v2`](https://github.com/seekdaseek/partitio/tree/deploy-v2). Transactions,
 gas, and every immutable read back from the chain: [docs/DEPLOYMENTS.md](docs/DEPLOYMENTS.md).
 
-**First mainnet round trip**, September 28, 2026, from our demo wallet, which has never held ETH:
-[buy 1 USDG of AAPL](https://robinhoodchain.blockscout.com/tx/0x5f8d8c0eff1e5504c346511c7ce1d8cbad775f318cfc5e2ac521ed92ef8cdc56) ·
-[sell it back](https://robinhoodchain.blockscout.com/tx/0x668e72767a4ff11981c523954641b8b0de43c1c301ee5cea043e8152918196b2). Both
-were sent, and their gas paid, by the relayer. Details: [JUDGE_GUIDE.md](JUDGE_GUIDE.md#8-the-demo-trade).
+**Mainnet round trips**, September 28, 2026, from our demo wallet, which has never held ETH. The
+first, at 14:00 UTC: [buy 1 USDG of AAPL](https://robinhoodchain.blockscout.com/tx/0x5f8d8c0eff1e5504c346511c7ce1d8cbad775f318cfc5e2ac521ed92ef8cdc56) ·
+[sell it back](https://robinhoodchain.blockscout.com/tx/0x668e72767a4ff11981c523954641b8b0de43c1c301ee5cea043e8152918196b2).
+The one in the demo video, at 15:30 UTC: [buy 0.99 USDG of AAPL](https://robinhoodchain.blockscout.com/tx/0x44e45f1ad396a0d4c37f5a9fc0ce8301d4fb1011702c7cb3d949e15d39ee70fe) ·
+[sell it back](https://robinhoodchain.blockscout.com/tx/0x2504a2e36d1ef0663e4750677dae2fd4b9f079d0727995620300b4507e326e2b). All four were sent, and their gas paid, by the
+relayer. Details: [JUDGE_GUIDE.md](JUDGE_GUIDE.md#8-the-demo-trade).
 
 ## Run it
 

@@ -73,22 +73,25 @@ integer for integer. The rules it applies, so you can judge them rather than the
 
 ## 8. The demo trade
 
-The first mainnet round trip, Monday, September 28, 2026, from our demo wallet
+Two mainnet round trips on Monday, September 28, 2026, both from our demo wallet
 [`0x0032fB2549Eeb8f6E41106c595d5B1b99bBB7554`](https://robinhoodchain.blockscout.com/address/0x0032fB2549Eeb8f6E41106c595d5B1b99bBB7554),
-which has never held ETH: its balance is 0 ETH and its nonce is 0, before and after. Both
+which has never held ETH: its balance is 0 ETH and its nonce is 0, before and after. All four
 transactions were sent, and their gas paid, by the relayer
 [`0x8155Fe3D74e5D97DC3E6dE119c497A24Aca62216`](https://robinhoodchain.blockscout.com/address/0x8155Fe3D74e5D97DC3E6dE119c497A24Aca62216).
 The relayer counts the demo wallet's orders as ours, not as users'.
 
-| step | tx | block | in | out | fee | gas, paid by the relayer |
-|---|---|---|---|---|---|---|
-| buy AAPL | [`0x5f8d8c0e…8cdc56`](https://robinhoodchain.blockscout.com/tx/0x5f8d8c0eff1e5504c346511c7ce1d8cbad775f318cfc5e2ac521ed92ef8cdc56) | 74852093 | 1 USDG | 0.002905609090167306 AAPL | 0.005 USDG | 585,512 |
-| sell it back | [`0x668e7276…8196b2`](https://robinhoodchain.blockscout.com/tx/0x668e72767a4ff11981c523954641b8b0de43c1c301ee5cea043e8152918196b2) | 74852963 | 0.002905609090167306 AAPL | 0.990099 USDG | 0.004947 USDG | 610,871 |
+| round trip | step | tx | block | in | out | fee | gas, paid by the relayer |
+|---|---|---|---|---|---|---|---|
+| first, 14:00 UTC | buy AAPL | [`0x5f8d8c0e…8cdc56`](https://robinhoodchain.blockscout.com/tx/0x5f8d8c0eff1e5504c346511c7ce1d8cbad775f318cfc5e2ac521ed92ef8cdc56) | 74852093 | 1 USDG | 0.002905609090167306 AAPL | 0.005 USDG | 585,512 |
+| | sell it back | [`0x668e7276…8196b2`](https://robinhoodchain.blockscout.com/tx/0x668e72767a4ff11981c523954641b8b0de43c1c301ee5cea043e8152918196b2) | 74852963 | 0.002905609090167306 AAPL | 0.990099 USDG | 0.004947 USDG | 610,871 |
+| **the demo video**, 15:30 UTC | buy AAPL | [`0x44e45f1a…ee70fe`](https://robinhoodchain.blockscout.com/tx/0x44e45f1ad396a0d4c37f5a9fc0ce8301d4fb1011702c7cb3d949e15d39ee70fe) | 74906068 | 0.99 USDG | 0.002884009347528764 AAPL | 0.00495 USDG | 396,696 |
+| | sell it back | [`0x2504a2e3…326e2b`](https://robinhoodchain.blockscout.com/tx/0x2504a2e36d1ef0663e4750677dae2fd4b9f079d0727995620300b4507e326e2b) | 74906322 | 0.002884009347528764 AAPL | 0.979276 USDG | 0.004896 USDG | 489,314 |
 
 On Blockscout each transaction goes **from the relayer to GaslessEntry**, and the wallet's tokens
 move inside it on signatures alone: USDG's EIP-3009 authorization on the buy, the stock's EIP-2612
-permit on the sell. The fee goes to the relayer in USDG. The recorded demo repeats this round trip
-with 0.99 USDG; its transactions are added here once they exist.
+permit on the sell. The fee goes to the relayer in USDG. The demo video records the second round
+trip; its two fills landed 26 seconds apart. After both, the wallet holds 0.985812 USDG, 0 AAPL
+and still 0 ETH.
 
 ---
 
