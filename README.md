@@ -8,11 +8,11 @@
 > [`evidence/headline.mjs`](evidence/headline.mjs), recomputable offline with
 > [`evidence/headline-offline.mjs`](evidence/headline-offline.mjs)
 
+**Demo video:** https://youtu.be/dxhwqTnKBzo · **Verify every claim in five minutes:** [JUDGE_GUIDE.md](JUDGE_GUIDE.md)
+
 **Live:** https://partitio.ochinimus.app — quotes need no wallet. Try
 [$100,000 of AAPL](https://partitio.ochinimus.app/?amt=100000) and watch the split against the best
 single pool.
-
-**Verify every claim in five minutes:** [JUDGE_GUIDE.md](JUDGE_GUIDE.md).
 
 ---
 

@@ -18,8 +18,13 @@ curl -sI http://explorer.mainnet.chain.robinhood.com/tx/0x44e45f1ad396a0d4c37f5a
 answers `301` with `Location: https://robinhoodchain.blockscout.com/`. Every link partitio shows now
 goes to `robinhoodchain.blockscout.com/tx/<hash>` directly.
 
+Over https the same link did not connect for any client we tried on 2026-09-28. The host ended the
+TLS handshake with alert 40 for curl and for openssl, from the Mac and from the VPS, and headless
+Chromium 153 stopped with `ERR_SSL_VERSION_OR_CIPHER_MISMATCH`. Over http, the same Chromium landed
+on Blockscout's home page.
+
 **Evidence:** `relayer/public/partitio-index.html` (the `EXPLORER` constant and its comment), commit
-`bade27a`.
+`bade27a`; `evidence/2026-09-28-explorer-tls.md`, every command and its output.
 **What would help:** a redirect that keeps the path, or the chain's docs naming Blockscout as the
 explorer.
 
@@ -59,8 +64,15 @@ as our relayer's was, shows `unknown (0x356680b7)`, and that is what Sergiu saw 
 of 1 USDG with 0.996536 in the wallet (2026-09-28, 14:08 UTC). An `eth_call` transfer of 1 USDG
 from that wallet reverts with `0x356680b7`; 0.99 goes through.
 
+The error itself is public. The contract behind USDG's proxy,
+`0x68184C449E1a8f34fA18d289737129FD27B66f8F`, is verified on Blockscout as
+`contracts/stablecoins/USDG.sol` and declares `InsufficientFunds()` with no arguments:
+[the verified source](https://robinhoodchain.blockscout.com/address/0x68184C449E1a8f34fA18d289737129FD27B66f8F?tab=contract).
+Only its shape is non-standard.
+
 **Evidence:** `docs/DEPLOYMENTS.md` (Mainnet trades), `relayer/submit.mjs` (`errorAbi` and its
-comment), `relayer/submit.test.mjs`.
+comment), `relayer/submit.test.mjs`; `evidence/2026-09-28-usdg-verified-source.md`, the proxy's
+implementation slot read on chain and Blockscout's record of the source.
 **What would help:** the ERC-6093 error, with the balance and the amount, which every standard
 decoder already names.
 

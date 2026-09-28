@@ -95,7 +95,7 @@ The relayer counts the demo wallet's orders as ours, not as users'.
 
 On Blockscout each transaction goes **from the relayer to GaslessEntry**, and the wallet's tokens
 move inside it on signatures alone: USDG's EIP-3009 authorization on the buy, the stock's EIP-2612
-permit on the sell. The fee goes to the relayer in USDG. The demo video records the second round
+permit on the sell. The fee goes to the relayer in USDG. The [demo video](https://youtu.be/dxhwqTnKBzo) records the second round
 trip; its two fills landed 26 seconds apart. After both, the wallet holds 0.985812 USDG, 0 AAPL
 and still 0 ETH.
 
