@@ -4,7 +4,7 @@ Final verification closed 2026-09-27, deployed the same day. **Nothing HIGH or C
 
 | gate | result | evidence |
 |---|---|---|
-| Independent review: 12 findings fixed | PASS | `3288713`, `docs/REVIEW-FIXES.md` §2; each PoC flipped, then rewritten positive |
+| Independent review: 12 findings closed. 9 fixed, R-05 closed by removal, R-11 kept by design, R-12 split between the contract and the relayer lock | PASS | `3288713`, `docs/REVIEW-FIXES.md` §2; the 9 fixes' PoCs flipped, then were rewritten positive; R-12's PoC still documents the residual the relayer lock covers |
 | Follow-up audit: 12 findings in the fixes | PASS | judges: 12 CLOSED, 2 PARTIAL (both below) |
 | Hunter HIGH (sliver fill burns order, full fee) | PASS | `c4c18d1`; `test_H1_acceptedAggregatorSliverStillRoutesTheRemainder`, pro-rata `test_H2_aGenuinelyShortSpendEarnsAProportionalFee` |
 | Dead store in the H-1 fix (`usedAggregator` always false) | PASS | `225c225`; `test_H1_theUsedAggregatorFlagReportsTheBranchThatActuallyRan`, negative-controlled |

@@ -28,7 +28,7 @@ Every claim can be checked in five minutes with the judge guide at the top of th
 PROGRESS DURING BUILDATHON
 Everything here was built during the buildathon, starting with the first commit on September 24, 2026.
 
-September 24 to 27: an evidence engine that quotes 18 stock tokens at four sizes about every 20 minutes, on-chain, venue by venue. Runs 1 to 245 produced 34,562 quote rows and 4,392 Chainlink references. An independent review of the contracts found 12 issues, one critical and one high. Both were fixed, and all 12 were closed before deployment. A follow-up audit of the fixes found 12 more, also fixed. 159 Foundry tests pass, and Medusa fuzzing ran with 0 failures.
+September 24 to 27: an evidence engine that quotes 18 stock tokens at four sizes about every 20 minutes, on-chain, venue by venue. Runs 1 to 245 produced 34,562 quote rows and 4,392 Chainlink references. An independent review of the contracts found 12 issues, one critical and one high. Both were fixed, and all 12 were closed before deployment. A follow-up audit of the fixes found 12 more, and the deploy went out with nothing high or critical open. 159 Foundry tests pass, and Medusa fuzzing ran with 0 failures.
 
 September 27: PartitioRouterV2 and GaslessEntry deployed on Robinhood Chain mainnet, exact match on Sourcify, and the relayer went live at partitio.ochinimus.app.
 
