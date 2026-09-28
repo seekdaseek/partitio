@@ -54,6 +54,12 @@ https://github.com/seekdaseek/partitio
 DEMO VIDEO
 PENDING. Recorded Monday, September 28, during US market hours. Paste the video link here before submitting.
 
+MAINNET TRADES - not a form field. For the video description or any free-text field.
+Mainnet round trip from a wallet with no ETH. Buy https://robinhoodchain.blockscout.com/tx/0x5f8d8c0eff1e5504c346511c7ce1d8cbad775f318cfc5e2ac521ed92ef8cdc56 Sell https://robinhoodchain.blockscout.com/tx/0x668e72767a4ff11981c523954641b8b0de43c1c301ee5cea043e8152918196b2
+
+CONTRACTS ON BLOCKSCOUT - not a form field. The form's core addresses field keeps the Sourcify links.
+GaslessEntry https://robinhoodchain.blockscout.com/address/0x9645388051ece3a437D5E224B17c156b16840AC7 PartitioRouterV2 https://robinhoodchain.blockscout.com/address/0x22be28fd3AECa3A1ba4a918E4DD458ba6B5E09EA
+
 SPONSOR TECH - tick these three
 
 Robinhood Chain

@@ -10,7 +10,7 @@
 
 import fs from "node:fs";
 import path from "node:path";
-import { encodeFunctionData, decodeErrorResult, recoverTypedDataAddress } from "viem";
+import { encodeFunctionData, decodeErrorResult, recoverTypedDataAddress, formatUnits } from "viem";
 
 import * as CFG from "./config.mjs";
 import { call } from "./rpc.mjs";
@@ -51,8 +51,12 @@ function errorAbi() {
     out.push(...JSON.parse(fs.readFileSync(p, "utf8")).abi.filter((x) => x.type === "error"));
   }
   // OracleGuard is a library; its errors are inlined into both callers, so they arrive via the
-  // two ABIs above. Add the ERC20 ones the tokens themselves raise.
+  // two ABIs above. Add the ones the tokens themselves raise: the stock tokens use OpenZeppelin's
+  // ERC20 errors, and USDG has its own. USDG's InsufficientFunds() (0x356680b7) is what a buy for
+  // more than the wallet holds reverts with; measured on mainnet 2026-09-28 by an eth_call
+  // transfer of 1 USDG from a wallet holding 0.996536 (0.99 from the same wallet succeeds).
   out.push(
+    { type: "error", name: "InsufficientFunds", inputs: [] },
     { type: "error", name: "ERC20InsufficientBalance", inputs: [
       { name: "sender", type: "address" }, { name: "balance", type: "uint256" }, { name: "needed", type: "uint256" }] },
     { type: "error", name: "ERC20InsufficientAllowance", inputs: [
@@ -113,6 +117,20 @@ export function refusalSentence(err, ctx = {}) {
       return "this order was already filled";
     case "FeeAboveMax":
       return "the fee exceeds what the order allows";
+    case "InsufficientFunds":
+      // USDG's own error, on the buy side: the wallet signed for more USDG than it holds
+      return "not enough USDG in the wallet for this order";
+    case "ERC20InsufficientBalance": {
+      // (sender, balance, needed) from a stock token: on a sell, the wallet holds less than it signed.
+      // All 37 stock tokens in tokens.json have 18 decimals (decimals() read on-chain 2026-09-28).
+      const [, balance, needed] = String(err.detail || "").split(",").map((x) => x.trim());
+      const sym = ctx.direction === "sell" && ctx.ticker ? ctx.ticker : "the token";
+      try {
+        return `not enough ${sym} in the wallet: it holds ${formatUnits(BigInt(balance), 18)}, the order needs ${formatUnits(BigInt(needed), 18)}`;
+      } catch {
+        return `not enough ${sym} in the wallet for this order`;
+      }
+    }
     default:
       return `would revert: ${err.name}${err.detail ? " (" + err.detail + ")" : ""}`;
   }
@@ -240,7 +258,7 @@ export async function handleOrder(body, { send = null, entryAddress = CFG.GASLES
         code: 422,
         out: {
           error: "would revert — not sent",
-          reason: refusalSentence(err, { direction, oracleDevBps: quote?.oracleDevBps }),
+          reason: refusalSentence(err, { direction, ticker, oracleDevBps: quote?.oracleDevBps }),
           revert: err,
           orderHash,
           sent: false,
@@ -265,7 +283,7 @@ export async function handleOrder(body, { send = null, entryAddress = CFG.GASLES
       if (e.notSent) {
         const err = explainRevert(e.revert);
         return { code: 422, out: { error: "would revert — not sent",
-          reason: refusalSentence(err, { direction, oracleDevBps: quote?.oracleDevBps }),
+          reason: refusalSentence(err, { direction, ticker, oracleDevBps: quote?.oracleDevBps }),
           revert: err, orderHash, sent: false, txs: 0, ms: Date.now() - t0 } };
       }
       return { code: 502, out: { error: "send failed", detail: String(e.message || e).slice(0, 300),

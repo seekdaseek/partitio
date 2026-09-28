@@ -12,7 +12,7 @@ us: each check reads the chain, a public verifier, or code you run.
 | 5 | Ownerless and immutable | in the verified source: no `Ownable`, no `onlyOwner`, no admin function, no proxy, no `selfdestruct`, no `delegatecall` | 60 s |
 | 6 | The tests pass | `git clone https://github.com/seekdaseek/partitio && cd partitio && npm ci && forge test` → 159 passed, 1 skipped with its reason | ~3 min |
 | 7 | The headline number | `node evidence/headline-offline.mjs` → the `$100000` row | 10 s |
-| 8 | A real trade, with no ETH in the wallet | the demo buy and sell below, on the explorer | 30 s |
+| 8 | A real trade, with no ETH in the wallet | the demo buy and sell below, on Blockscout | 30 s |
 
 ## 1–2. The live quote
 
@@ -29,8 +29,8 @@ The button stays capped: "beta: $50 per trade".
 
 | contract | address | deploy tx |
 |---|---|---|
-| GaslessEntry | `0x9645388051ece3a437D5E224B17c156b16840AC7` | `0xb4539d6c9488350abb899ef1a8f2aae46383bdc77391ac7e9eb9993447060f7a` |
-| PartitioRouterV2 | `0x22be28fd3AECa3A1ba4a918E4DD458ba6B5E09EA` | `0x12c7363910f26e7b5fe9c8f2e208fb38cbfc493bf66872e2dc67ca4048a4923c` |
+| GaslessEntry | [`0x9645388051ece3a437D5E224B17c156b16840AC7`](https://robinhoodchain.blockscout.com/address/0x9645388051ece3a437D5E224B17c156b16840AC7) | [`0xb4539d6c9488350abb899ef1a8f2aae46383bdc77391ac7e9eb9993447060f7a`](https://robinhoodchain.blockscout.com/tx/0xb4539d6c9488350abb899ef1a8f2aae46383bdc77391ac7e9eb9993447060f7a) |
+| PartitioRouterV2 | [`0x22be28fd3AECa3A1ba4a918E4DD458ba6B5E09EA`](https://robinhoodchain.blockscout.com/address/0x22be28fd3AECa3A1ba4a918E4DD458ba6B5E09EA) | [`0x12c7363910f26e7b5fe9c8f2e208fb38cbfc493bf66872e2dc67ca4048a4923c`](https://robinhoodchain.blockscout.com/tx/0x12c7363910f26e7b5fe9c8f2e208fb38cbfc493bf66872e2dc67ca4048a4923c) |
 
 Both were built from the tag [`deploy-v2`](https://github.com/seekdaseek/partitio/tree/deploy-v2).
 Searching the source for "owner", "pause" or "sweep" finds only comments explaining why each is
@@ -73,12 +73,22 @@ integer for integer. The rules it applies, so you can judge them rather than the
 
 ## 8. The demo trade
 
-*Recorded Monday, September 28, during US market hours. Transactions are added here once they exist.*
+The first mainnet round trip, Monday, September 28, 2026, from our demo wallet
+[`0x0032fB2549Eeb8f6E41106c595d5B1b99bBB7554`](https://robinhoodchain.blockscout.com/address/0x0032fB2549Eeb8f6E41106c595d5B1b99bBB7554),
+which has never held ETH: its balance is 0 ETH and its nonce is 0, before and after. Both
+transactions were sent, and their gas paid, by the relayer
+[`0x8155Fe3D74e5D97DC3E6dE119c497A24Aca62216`](https://robinhoodchain.blockscout.com/address/0x8155Fe3D74e5D97DC3E6dE119c497A24Aca62216).
+The relayer counts the demo wallet's orders as ours, not as users'.
 
-| step | tx | what it shows |
-|---|---|---|
-| buy 1 USDG of AAPL | — | from the demo wallet `0x0032fB2549Eeb8f6E41106c595d5B1b99bBB7554`, which has never held ETH; sent and paid for by the relayer `0x8155Fe3D74e5D97DC3E6dE119c497A24Aca62216` |
-| sell it back | — | EIP-2612 permit, fee taken from the USDG proceeds |
+| step | tx | block | in | out | fee | gas, paid by the relayer |
+|---|---|---|---|---|---|---|
+| buy AAPL | [`0x5f8d8c0e…8cdc56`](https://robinhoodchain.blockscout.com/tx/0x5f8d8c0eff1e5504c346511c7ce1d8cbad775f318cfc5e2ac521ed92ef8cdc56) | 74852093 | 1 USDG | 0.002905609090167306 AAPL | 0.005 USDG | 585,512 |
+| sell it back | [`0x668e7276…8196b2`](https://robinhoodchain.blockscout.com/tx/0x668e72767a4ff11981c523954641b8b0de43c1c301ee5cea043e8152918196b2) | 74852963 | 0.002905609090167306 AAPL | 0.990099 USDG | 0.004947 USDG | 610,871 |
+
+On Blockscout each transaction goes **from the relayer to GaslessEntry**, and the wallet's tokens
+move inside it on signatures alone: USDG's EIP-3009 authorization on the buy, the stock's EIP-2612
+permit on the sell. The fee goes to the relayer in USDG. The recorded demo repeats this round trip
+with 0.99 USDG; its transactions are added here once they exist.
 
 ---
 

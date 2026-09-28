@@ -50,11 +50,16 @@ Ownerless and immutable: no owner, no pause, no upgrade, no sweep.
 
 | contract | address | source |
 |---|---|---|
-| GaslessEntry | [`0x9645388051ece3a437D5E224B17c156b16840AC7`](https://repo.sourcify.dev/4663/0x9645388051ece3a437D5E224B17c156b16840AC7) | Sourcify `exact_match` |
-| PartitioRouterV2 | [`0x22be28fd3AECa3A1ba4a918E4DD458ba6B5E09EA`](https://repo.sourcify.dev/4663/0x22be28fd3AECa3A1ba4a918E4DD458ba6B5E09EA) | Sourcify `exact_match` |
+| GaslessEntry | [`0x9645388051ece3a437D5E224B17c156b16840AC7`](https://robinhoodchain.blockscout.com/address/0x9645388051ece3a437D5E224B17c156b16840AC7) | [Sourcify `exact_match`](https://repo.sourcify.dev/4663/0x9645388051ece3a437D5E224B17c156b16840AC7) |
+| PartitioRouterV2 | [`0x22be28fd3AECa3A1ba4a918E4DD458ba6B5E09EA`](https://robinhoodchain.blockscout.com/address/0x22be28fd3AECa3A1ba4a918E4DD458ba6B5E09EA) | [Sourcify `exact_match`](https://repo.sourcify.dev/4663/0x22be28fd3AECa3A1ba4a918E4DD458ba6B5E09EA) |
 
 Deployed from tag [`deploy-v2`](https://github.com/seekdaseek/partitio/tree/deploy-v2). Transactions,
 gas, and every immutable read back from the chain: [docs/DEPLOYMENTS.md](docs/DEPLOYMENTS.md).
+
+**First mainnet round trip**, September 28, 2026, from our demo wallet, which has never held ETH:
+[buy 1 USDG of AAPL](https://robinhoodchain.blockscout.com/tx/0x5f8d8c0eff1e5504c346511c7ce1d8cbad775f318cfc5e2ac521ed92ef8cdc56) ·
+[sell it back](https://robinhoodchain.blockscout.com/tx/0x668e72767a4ff11981c523954641b8b0de43c1c301ee5cea043e8152918196b2). Both
+were sent, and their gas paid, by the relayer. Details: [JUDGE_GUIDE.md](JUDGE_GUIDE.md#8-the-demo-trade).
 
 ## Run it
 

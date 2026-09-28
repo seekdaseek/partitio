@@ -181,6 +181,27 @@ const staleSentence = refusalSentence({ name: "FeedOlderThanSignerAllows", detai
 check("a stale-reference refusal tells the user to re-sign", /re-quote/i.test(staleSentence), staleSentence);
 console.log("    " + staleSentence);
 
+// THE TWO SHORTFALLS SERGIU HIT ON MAINNET, 2026-09-28. A buy of 1 USDG from a wallet holding
+// 0.996536 reverted inside USDG with these exact four bytes and the page said "unknown"; a second
+// sell of already-sold AAPL reverted with ERC20InsufficientBalance.
+const usdgShort = explainRevert("0x356680b7");
+check("USDG's InsufficientFunds() decodes by name", usdgShort.name === "InsufficientFunds", JSON.stringify(usdgShort));
+const usdgSentence = refusalSentence(usdgShort, { direction: "buy", ticker: "AAPL" });
+check("a USDG shortfall reads as one", /not enough USDG/.test(usdgSentence), usdgSentence);
+console.log("    " + usdgSentence);
+
+const STOCKSHORT = encodeErrorResult({
+  abi: [{ type: "error", name: "ERC20InsufficientBalance", inputs: [
+    { name: "sender", type: "address" }, { name: "balance", type: "uint256" }, { name: "needed", type: "uint256" }] }],
+  errorName: "ERC20InsufficientBalance",
+  args: ["0x0032fB2549Eeb8f6E41106c595d5B1b99bBB7554", 0n, 2905609090167306n],
+});
+const stockShort = explainRevert(STOCKSHORT);
+const stockSentence = refusalSentence(stockShort, { direction: "sell", ticker: "AAPL" });
+check("a stock shortfall names the ticker and both amounts",
+  /not enough AAPL/.test(stockSentence) && /holds 0,/.test(stockSentence) && /0\.002905609090167306/.test(stockSentence), stockSentence);
+console.log("    " + stockSentence);
+
 // ---------------------------------------------------------------- result
 
 console.log(`\n${failures} failures`);

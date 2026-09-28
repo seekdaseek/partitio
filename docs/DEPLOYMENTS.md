@@ -29,6 +29,23 @@ mainnet charged.
 Cost: 0.000109315 ETH at 0.020 gwei. Deployer `0x7a7c915D8dA490c48915Fe735DDf41f8Dea83dC2`:
 0.000698007 ETH before, 0.000588692 ETH after, nonce 11 -> 13.
 
+### First mainnet trades (2026-09-28)
+
+From our demo wallet `0x0032fB2549Eeb8f6E41106c595d5B1b99bBB7554` (0 ETH and nonce 0 before and
+after), sent and paid for by the relayer `0x8155Fe3D74e5D97DC3E6dE119c497A24Aca62216`. Read back
+from the receipts; the relayer records both as team orders.
+
+| step | tx | block | in | out | relayer fee | gas | ETH, paid by the relayer |
+|---|---|---|---|---|---|---|---|
+| buy AAPL | [`0x5f8d8c0e…8cdc56`](https://robinhoodchain.blockscout.com/tx/0x5f8d8c0eff1e5504c346511c7ce1d8cbad775f318cfc5e2ac521ed92ef8cdc56) | 74852093 | 1 USDG | 0.002905609090167306 AAPL | 0.005 USDG | 585,512 | 0.0000136822 |
+| sell AAPL | [`0x668e7276…8196b2`](https://robinhoodchain.blockscout.com/tx/0x668e72767a4ff11981c523954641b8b0de43c1c301ee5cea043e8152918196b2) | 74852963 | 0.002905609090167306 AAPL | 0.990099 USDG | 0.004947 USDG | 610,871 | 0.0000125058 |
+
+Two refusals followed, both before anything was sent. At 14:04:56 UTC the page let the wallet sign a
+second sell of AAPL it had already sold (`ERC20InsufficientBalance`). At 14:08:27 it let the wallet
+sign a buy of 1 USDG while holding 0.996536, and the relayer could not name USDG's own
+`InsufficientFunds()` (`0x356680b7`), so it said "unknown". Since then the page checks the balance
+before anything is signed, and the relayer names both errors.
+
 ---
 
 ## v1 — PartitioRouter + PartitioCaller (2026-09-24)

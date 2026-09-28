@@ -110,6 +110,11 @@ h1{font:400 36px/1.12 var(--serif);letter-spacing:-.015em;margin:0 0 8px}
 .note.go{display:block;background:var(--go-bg);color:var(--go)}
 .note.no{display:block;background:var(--no-bg);color:var(--no)}
 .note.warn{display:block;background:var(--warn-bg);color:var(--warn)}
+/* the proof of a fill: only the user's next action removes it */
+.receipt{border:1px solid var(--go);background:var(--go-bg);color:var(--ink);border-radius:12px;padding:11px 13px;font-size:14px;margin-top:12px}
+.receipt[hidden]{display:none}
+.receipt b{color:var(--go);font-weight:600}
+.receipt a{color:var(--go);font-weight:600}
 .steps{list-style:none;margin:14px 0 0;padding:0;display:none}
 .steps li{display:flex;gap:10px;align-items:flex-start;padding:7px 0;color:var(--dim);font-size:14px}
 .steps li.now{color:var(--ink)}
@@ -173,6 +178,7 @@ h1{font:400 36px/1.12 var(--serif);letter-spacing:-.015em;margin:0 0 8px}
       <li id="st2"><span class="n">2</span><span id="st2t">Authorize the funds — this order only</span></li>
       <li id="st3"><span class="n">3</span><span>The relayer fills it on-chain and pays the gas</span></li>
     </ol>
+    <div class="receipt" id="receipt" role="status" hidden></div>
     <button class="primary" id="go" disabled>Connect a wallet to trade</button>
   </div>
 
@@ -188,7 +194,9 @@ h1{font:400 36px/1.12 var(--serif);letter-spacing:-.015em;margin:0 0 8px}
 <script>
 (() => {
   const CHAIN_HEX = "0x1237";
-  const EXPLORER = "https://explorer.mainnet.chain.robinhood.com";
+  // explorer.mainnet.chain.robinhood.com/tx/<hash> redirects to Blockscout's HOME page and drops the
+  // path, so every link goes to Blockscout directly
+  const EXPLORER = "https://robinhoodchain.blockscout.com";
   const USDG = "0x5fc5360D0400a0Fd4f2af552ADD042D716F1d168";
   const $ = (id) => document.getElementById(id);
   const st = { side: "buy", account: null, health: null, tokens: {}, preview: null, prepared: null,
@@ -200,6 +208,14 @@ h1{font:400 36px/1.12 var(--serif);letter-spacing:-.015em;margin:0 0 8px}
     const i = s.slice(0, -dec), f = s.slice(-dec).slice(0, dp).replace(/0+$/, "");
     return (neg ? "-" : "") + Number(i).toLocaleString("en-US") + (f ? "." + f : "");
   };
+  // truncates and keeps trailing zeros: fixed(996536n, 6, 4) = "0.9965"
+  const fixed = (v, dec, dp) => {
+    const s = BigInt(v).toString().padStart(dec + 1, "0");
+    return Number(s.slice(0, -dec)).toLocaleString("en-US") + (dp ? "." + s.slice(-dec).slice(0, dp) : "");
+  };
+  // USDG in a wallet: 0.996536 reads 0.9965, not 0.99. Four decimals under $10, cents above.
+  const holdUsdg = (u) => (u === 0n ? "0" : fixed(u, 6, u < 10_000_000n ? 4 : 2));
+  const cap1 = (t) => (t ? t[0].toUpperCase() + t.slice(1) : t);
   const usd = (units) => {           // USDG base units -> "$0.0071" / "$0.48" / "$126.26"
     const x = Number(units) / 1e6;
     if (x === 0) return "$0";
@@ -262,25 +278,59 @@ h1{font:400 36px/1.12 var(--serif);letter-spacing:-.015em;margin:0 0 8px}
   }
   async function balances() {
     if (!st.account) { $("hold").innerHTML = ""; return; }
-    const t = $("ticker").value, tok = st.tokens[t];
-    const [u, s, e] = await Promise.all([erc20Bal(USDG, st.account), tok ? erc20Bal(tok, st.account) : 0n,
-      eth().request({ method: "eth_getBalance", params: [st.account, "latest"] }).then(BigInt)]);
-    st.bal = { usdg: u, stock: s, eth: e };
-    $("hold").innerHTML = `You hold <b>${fmt(u, 6, 2)} USDG</b> · <b>${fmt(s, 18, 6)} ${t}</b> · ` +
-      `<span class="${e === 0n ? "zero" : ""}"><b>${fmt(e, 18, 6)} ETH</b>${e === 0n ? " — and you don't need any" : ""}</span>` +
-      (st.side === "sell" && s > 0n ? ` · <button class="link" id="max">sell all</button>` : "");
-    const m = $("max"); if (m) m.onclick = () => { $("amt").value = fmt(s, 18, 18).replace(/,/g, ""); schedule(); };
+    const who = st.account, t = $("ticker").value, tok = st.tokens[t];
+    const [u, s, e] = await Promise.all([erc20Bal(USDG, who), tok ? erc20Bal(tok, who) : 0n,
+      eth().request({ method: "eth_getBalance", params: [who, "latest"] }).then(BigInt)]);
+    if (who !== st.account || t !== $("ticker").value) return;   // a newer read is on its way
+    st.bal = { usdg: u, stock: s, eth: e, ticker: t, account: who };
+    const buy = st.side === "buy";
+    const max = (have) => (have > 0n ? ` <button class="link" id="max">Max</button>` : "");
+    $("hold").innerHTML = `You hold <b>${holdUsdg(u)} USDG</b>${buy ? max(u) : ""} · <b>${fmt(s, 18, 6)} ${t}</b>${buy ? "" : max(s)} · ` +
+      `<span class="${e === 0n ? "zero" : ""}"><b>${fmt(e, 18, 6)} ETH</b>${e === 0n ? " — and you don't need any" : ""}</span>`;
+    const m = $("max");
+    if (m) m.onclick = () => { userAct(); $("amt").value = (buy ? fmt(u, 6, 6) : fmt(s, 18, 18)).replace(/,/g, ""); schedule(); };
+    refreshButton();
+  }
+
+  // Checked before anything is signed: signing for more than the wallet holds only buys a refusal.
+  // A buy spends USDG, a sell spends the stock. Unknown balances (no wallet, a read in flight) pass,
+  // and the relayer's own simulation still refuses anything the chain would.
+  function shortfall() {
+    const b = st.bal, t = $("ticker").value, buy = st.side === "buy";
+    if (!st.account || !b || b.account !== st.account || (!buy && b.ticker !== t)) return null;
+    const amt = parseUnits($("amt").value, buy ? 6 : 18);
+    if (!amt || amt <= 0n) return null;
+    const have = buy ? b.usdg : b.stock;
+    if (amt <= have) return null;
+    return `Not enough ${buy ? "USDG" : t}, you hold ${buy ? holdUsdg(have) : fmt(have, 18, 6)}`;
   }
 
   // ---------------------------------------------------------------- the live, display-only quote
   function note(kind, text) { const n = $("note"); n.className = "note " + (kind || ""); n.textContent = text || ""; }
   function step(i, cls) { $("st" + i).className = cls; }
 
+  // The proof of a fill. Nothing automatic removes it: not the re-quote, not a balance read, not a
+  // failed read. Only the user's next action does (userAct).
+  function receipt(q, out) {
+    const r = $("receipt"), tx = out.txHash;
+    const what = q.direction === "buy" ? `Bought ${q.ticker} with ${fmt(q.order.amountIn, 6, 6)} USDG`
+                                       : `Sold ${fmt(q.order.amountIn, 18, 6)} ${q.ticker}`;
+    r.innerHTML = `<b>Filled.</b> ${what} · <a href="${EXPLORER}/tx/${tx}" target="_blank" rel="noopener">${tx.slice(0, 10)}…${tx.slice(-6)} ↗</a>` +
+      `<span class="sub">on Blockscout · ${Number(out.gasUsed).toLocaleString("en-US")} gas, paid by the relayer · 0 ETH from your wallet</span>`;
+    r.hidden = false;
+    r.scrollIntoView({ block: "nearest" });
+  }
+  // The user's next action ends the last trade's display: the receipt, the ticked steps, any refusal.
+  function userAct() {
+    const r = $("receipt"); r.hidden = true; r.innerHTML = "";
+    $("steps").style.display = "none";
+    note();
+  }
+
   let timer = null;
-  // keep = true after a fill: re-quote, but leave the "Filled" line and the ticked steps on screen
-  function schedule(keep = false) {
+  // re-quote after a pause; it clears nothing on screen (the user's own actions do that)
+  function schedule() {
     st.prepared = null;
-    if (!keep) { $("steps").style.display = "none"; note(); }
     clearTimeout(timer);
     const out = document.querySelector(".big"); if (out) out.classList.add("loading");
     st.loading = true;
@@ -363,6 +413,9 @@ h1{font:400 36px/1.12 var(--serif);letter-spacing:-.015em;margin:0 0 8px}
     const b = $("go"), q = st.preview, m = st.health?.mode;
     b.onclickMode = null;
     if (st.busy) { b.disabled = true; return; }
+    // a connected wallet that cannot pay is told so first, whatever the size (null with no wallet)
+    const short = shortfall();
+    if (short) { b.disabled = true; b.textContent = short; return; }
     // the cap shows even without a wallet: a judge typing 100000 should see why they cannot trade it
     if (q && q.notionalUsd > st.cap) { b.disabled = true; b.textContent = `beta: $${st.cap} per trade`; return; }
     if (!st.account) { b.disabled = false; b.textContent = "Connect a wallet to trade"; b.onclickMode = "connect"; return; }
@@ -378,8 +431,11 @@ h1{font:400 36px/1.12 var(--serif);letter-spacing:-.015em;margin:0 0 8px}
   async function review() {
     const t = $("ticker").value, dec = st.side === "buy" ? 6 : 18;
     const amt = parseUnits($("amt").value, dec);
-    st.busy = true; refreshButton(); $("go").textContent = "Preparing the order…"; note();
+    userAct();
+    st.busy = true; refreshButton(); $("go").textContent = "Preparing the order…";
     try {
+      await balances().catch(() => {});   // fresh, so the check is not against an old read
+      if (shortfall()) return;            // the button now names the shortfall
       const r = await fetch("/api/prepare", { method: "POST", headers: { "content-type": "application/json" },
         body: JSON.stringify({ ticker: t, direction: st.side, amountIn: amt.toString(), owner: st.account }) });
       const q = await r.json();
@@ -401,10 +457,14 @@ h1{font:400 36px/1.12 var(--serif);letter-spacing:-.015em;margin:0 0 8px}
 
   async function trade() {
     const q = st.prepared;
-    st.busy = true; refreshButton();
-    $("steps").style.display = "block"; step(1, "now"); step(2, ""); step(3, "");
-    $("st2t").textContent = st.side === "buy" ? "Authorize the USDG — valid for this order only" : `Permit the ${q.ticker} — for this amount only`;
+    userAct();
+    st.busy = true; refreshButton(); $("go").textContent = "Checking your balance…";
     try {
+      await balances().catch(() => {});
+      const short = shortfall();
+      if (short) { st.prepared = null; note("no", `${short}. Nothing was signed.`); return; }
+      $("steps").style.display = "block"; step(1, "now"); step(2, ""); step(3, "");
+      $("st2t").textContent = st.side === "buy" ? "Authorize the USDG — valid for this order only" : `Permit the ${q.ticker} — for this amount only`;
       $("go").textContent = "Waiting for signature 1 of 2…";
       const orderSignature = await eth().request({ method: "eth_signTypedData_v4", params: [st.account, JSON.stringify(q.sign.order)] });
       step(1, "done"); step(2, "now");
@@ -417,15 +477,16 @@ h1{font:400 36px/1.12 var(--serif);letter-spacing:-.015em;margin:0 0 8px}
       const out = await r.json();
       if (out.sent && out.ok) {
         step(3, "done");
-        const tx = out.txHash, n = $("note"); n.className = "note go";
-        n.innerHTML = `Filled. <a href="${EXPLORER}/tx/${tx}" target="_blank" rel="noopener">${tx.slice(0, 10)}…${tx.slice(-6)}</a> · ` +
-          `${Number(out.gasUsed).toLocaleString()} gas, paid by the relayer`;
+        receipt(q, out);
         st.prepared = null;
-        await balances();
-        schedule(true);
+        // Filled: the same amount again would only be refused (a second sell of AAPL already sold is
+        // how the 14:04 refusal on 2026-09-28 happened), so the form empties and the receipt stays.
+        clearTimeout(timer); st.seq++; st.loading = false; st.preview = null;
+        $("amt").value = ""; renderIdle("Type an amount to see the route.");
+        await balances().catch(() => {});   // a failed read must not replace the receipt
       } else {
         step(3, "");
-        note("no", FRIENDLY[out.error] || out.reason || out.error || "Not sent.");
+        note("no", FRIENDLY[out.error] || (out.reason ? cap1(out.reason) + "." : null) || out.error || "Not sent.");
       }
     } catch (e) {
       note("no", e.code === 4001 ? "Signature declined — nothing was sent, nothing was spent." : e.message);
@@ -436,9 +497,19 @@ h1{font:400 36px/1.12 var(--serif);letter-spacing:-.015em;margin:0 0 8px}
   function setSide(s) {
     st.side = s; $("sBuy").classList.toggle("on", s === "buy"); $("sSell").classList.toggle("on", s === "sell");
     $("amtLabel").textContent = s === "buy" ? "You pay (USDG)" : `You sell (${$("ticker").value})`;
-    if (s === "sell") $("amt").value = st.bal?.stock ? fmt(st.bal.stock, 18, 18).replace(/,/g, "") : "1";
-    else $("amt").value = "50";
-    balances(); schedule();
+    // a sell defaults to the whole balance of this stock AS IT IS NOW: right after a buy the last read
+    // may predate the fill, so the default is set again when the fresh read lands, unless the user
+    // has typed something else in the meantime
+    const sellAll = () => {
+      const held = st.bal?.ticker === $("ticker").value ? st.bal.stock : 0n;
+      return held > 0n ? fmt(held, 18, 18).replace(/,/g, "") : "1";
+    };
+    const first = s === "sell" ? sellAll() : "50";
+    $("amt").value = first;
+    balances().then(() => {
+      if (s === "sell" && st.side === "sell" && $("amt").value === first && sellAll() !== first) { $("amt").value = sellAll(); schedule(); }
+    }).catch(() => {});
+    schedule();
   }
 
   async function boot() {
@@ -462,14 +533,14 @@ h1{font:400 36px/1.12 var(--serif);letter-spacing:-.015em;margin:0 0 8px}
     schedule();
   }
 
-  $("connect").onclick = () => connect().catch((e) => note("no", e.message));
-  $("sBuy").onclick = () => setSide("buy");
-  $("sSell").onclick = () => setSide("sell");
-  $("amt").oninput = schedule;
-  $("ticker").onchange = () => { if (st.side === "sell") $("amtLabel").textContent = `You sell (${$("ticker").value})`; balances(); schedule(); };
+  $("connect").onclick = () => { userAct(); connect().catch((e) => note("no", e.message)); };
+  $("sBuy").onclick = () => { userAct(); setSide("buy"); };
+  $("sSell").onclick = () => { userAct(); setSide("sell"); };
+  $("amt").oninput = () => { userAct(); schedule(); };
+  $("ticker").onchange = () => { userAct(); if (st.side === "sell") $("amtLabel").textContent = `You sell (${$("ticker").value})`; balances(); schedule(); };
   $("go").onclick = () => {
     const m = $("go").onclickMode;
-    if (m === "connect") return connect().catch((e) => note("no", e.message));
+    if (m === "connect") { userAct(); return connect().catch((e) => note("no", e.message)); }
     if (m === "review") return review();
     if (m === "trade") return trade();
   };
